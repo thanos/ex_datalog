@@ -42,6 +42,8 @@ defmodule ExDatalog.Validator.Safety do
   alias ExDatalog.{Atom, Constraint, Rule}
   alias ExDatalog.Validator.Error
 
+  @compile {:no_warn_undefined, ExDatalog.Validator.Error}
+
   @doc """
     Checks all rules in a program for variable safety violations.
 

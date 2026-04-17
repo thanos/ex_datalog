@@ -24,6 +24,8 @@ defmodule ExDatalog.Validator do
 
   """
 
+  @compile {:no_warn_undefined, ExDatalog.Validator.Error}
+
   alias ExDatalog.{Atom, Program, Rule}
   alias ExDatalog.Validator.{Error, Safety, Stratification}
 

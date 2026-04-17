@@ -18,6 +18,8 @@ defmodule ExDatalog.Validator.Stratification do
   alias ExDatalog.{Atom, Rule}
   alias ExDatalog.Validator.Error
 
+  @compile {:no_warn_undefined, ExDatalog.Validator.Error}
+
   @type edge :: {String.t(), :positive | :negative}
   @type graph :: %{String.t() => [edge()]}
   @type scc :: [String.t()]
