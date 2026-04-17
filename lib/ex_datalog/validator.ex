@@ -2,21 +2,18 @@ defmodule ExDatalog.Validator do
   @moduledoc """
   Validation pipeline for ExDatalog programs.
 
-  Validation is split across phases:
+  Validates a program in two stages:
 
-  - **Phase 1 (structural)**: Implemented here. Checks relation references,
-    arity consistency, and term validity. These checks are fast and
-    do not require semantic analysis.
+  - **Phase 1 (structural)**: Checks relation references, arity consistency,
+    and term validity. Runs on every `validate/1` call.
 
-  - **Phase 2 (semantic)**: Not yet implemented. Will add variable safety,
-    range restriction, and stratified negation checks via sub-modules
-    `ExDatalog.Validator.Safety` and `ExDatalog.Validator.Stratification`.
+  - **Phase 2 (semantic)**: Checks variable safety, range restriction,
+    wildcard-in-head, constraint binding, and stratified negation. Runs on
+    every `validate/1` call after Phase 1 succeeds.
 
-  ## Return values
-
-  - `{:ok, program}` — program is valid; same struct returned for pipeline chaining.
-  - `{:error, errors}` — list of `ExDatalog.Validator.Errors.t()` describing all failures.
-    All errors are collected (not short-circuited) so callers see the full picture.
+  All errors are collected (not short-circuited) so callers see the full
+  picture. Returns `{:ok, program}` on success or `{:error, [errors]}` on
+  failure.
 
   ## Examples
 
@@ -28,24 +25,13 @@ defmodule ExDatalog.Validator do
   """
 
   alias ExDatalog.{Atom, Program, Rule}
-  alias ExDatalog.Validator.Errors
+  alias ExDatalog.Validator.{Errors, Safety, Stratification}
 
   @doc """
-  Runs the full validation pipeline on a program.
+  Runs the full validation pipeline (structural + semantic) on a program.
 
-  Currently runs Phase 1 structural checks. Returns `{:ok, program}` on
-  success, or `{:error, [%Errors{}]}` with all accumulated errors on failure.
-
-  ## Examples
-
-      iex> alias ExDatalog.{Program, Rule, Atom, Term, Validator}
-      iex> program =
-      ...>   Program.new()
-      ...>   |> Program.add_relation("parent", [:atom, :atom])
-      ...>   |> Program.add_fact("parent", [:alice, :bob])
-      iex> {:ok, _} = Validator.validate(program)
-      {:ok, %ExDatalog.Program{}}
-
+  Returns `{:ok, program}` on success, or `{:error, [%Errors{}]}` with all
+  accumulated errors on failure.
   """
   @spec validate(Program.t()) :: {:ok, Program.t()} | {:error, [Errors.t()]}
   def validate(%Program{} = program) do
@@ -53,6 +39,8 @@ defmodule ExDatalog.Validator do
       []
       |> check_facts(program)
       |> check_rules(program)
+      |> check_safety(program)
+      |> check_stratification(program)
 
     case errors do
       [] -> {:ok, program}
@@ -67,32 +55,28 @@ defmodule ExDatalog.Validator do
     |> Enum.with_index()
     |> Enum.reduce(errors, fn {{relation, values}, idx}, acc ->
       acc
-      |> check_relation_exists(relation, %{fact_index: idx, relation: relation})
+      |> check_fact_undefined_relation(relation, rels, idx)
       |> check_fact_arity(relation, values, rels, idx)
     end)
   end
 
-  defp check_relation_exists(errors, relation, context) do
-    # Note: structural checks on the builder already guard this, but we
-    # re-check here so the validator is a standalone correctness gate.
-    # This will be called with full program context in Phase 2 as well.
-    _ = context
-    _ = relation
-    errors
+  defp check_fact_undefined_relation(errors, relation, rels, idx) do
+    if Map.has_key?(rels, relation) do
+      errors
+    else
+      [
+        Errors.new(
+          :undefined_relation,
+          %{relation: relation, fact_index: idx},
+          "fact at index #{idx} references undefined relation #{inspect(relation)}"
+        )
+        | errors
+      ]
+    end
   end
 
   defp check_fact_arity(errors, relation, values, rels, idx) do
     case Map.fetch(rels, relation) do
-      :error ->
-        [
-          Errors.new(
-            :undefined_relation,
-            %{relation: relation, fact_index: idx},
-            "fact at index #{idx} references undefined relation #{inspect(relation)}"
-          )
-          | errors
-        ]
-
       {:ok, %{arity: arity}} when length(values) != arity ->
         [
           Errors.new(
@@ -104,7 +88,7 @@ defmodule ExDatalog.Validator do
           | errors
         ]
 
-      {:ok, _} ->
+      _ ->
         errors
     end
   end
@@ -210,6 +194,31 @@ defmodule ExDatalog.Validator do
     end)
   end
 
+  # --- Phase 2: Semantic checks ---
+
+  defp check_safety(errors, %Program{rules: rules} = program) when rules == [] do
+    _ = program
+    errors
+  end
+
+  defp check_safety(errors, %Program{} = program) do
+    safety_errors = Safety.check(program)
+    errors ++ safety_errors
+  end
+
+  defp check_stratification(errors, %Program{rules: rules}) when rules == [] do
+    errors
+  end
+
+  defp check_stratification(errors, %Program{} = program) do
+    case Stratification.check(program) do
+      :ok -> errors
+      {:error, strat_errors} -> errors ++ strat_errors
+    end
+  end
+
+  # --- Helpers ---
+
   defp location(%{rule_index: ri, position: :head}), do: "rule #{ri} head"
 
   defp location(%{rule_index: ri, body_index: bi, polarity: p}),
@@ -217,5 +226,4 @@ defmodule ExDatalog.Validator do
 
   defp location(%{rule_index: ri, body_index: bi}), do: "rule #{ri} body[#{bi}]"
   defp location(%{rule_index: ri}), do: "rule #{ri}"
-  defp location(_), do: "unknown"
 end

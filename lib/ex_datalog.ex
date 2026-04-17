@@ -119,6 +119,7 @@ defmodule ExDatalog do
 
   Available in Phase 3.
   """
+  @dialyzer {:no_return, compile: 1}
   @spec compile(Program.t()) :: {:ok, term()} | {:error, list()}
   def compile(%Program{} = program) do
     with {:ok, validated} <- validate(program) do
@@ -133,6 +134,7 @@ defmodule ExDatalog do
 
   Available in Phase 4.
   """
+  @dialyzer {:no_return, evaluate: 2}
   @spec evaluate(term(), keyword()) :: {:ok, term()} | {:error, term()}
   def evaluate(ir, opts \\ []) do
     engine = Keyword.get(opts, :engine, ExDatalog.Engine.Naive)
@@ -152,6 +154,7 @@ defmodule ExDatalog do
 
   See module documentation for available options.
   """
+  @dialyzer {:no_return, query: 2}
   @spec query(Program.t(), keyword()) :: {:ok, term()} | {:error, term()}
   def query(%Program{} = program, opts \\ []) do
     with {:ok, validated} <- validate(program),

@@ -43,6 +43,7 @@ defmodule ExDatalog.Validator.Errors do
           | :unstratified_negation
           | :unbound_constraint_variable
           | :invalid_body_literal
+          | :wildcard_in_head
 
   @type t :: %__MODULE__{
           kind: kind(),

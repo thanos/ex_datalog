@@ -75,9 +75,9 @@ defmodule ExDatalog.MixProject do
       precommit: [
         "compile --warnings-as-errors",
         "deps.unlock --check-unused",
-        "format",
-        "test"
-      ]
+        "format"
+      ],
+      verify: &verify/1
     ]
   end
 
@@ -125,5 +125,40 @@ defmodule ExDatalog.MixProject do
         ]
       ]
     ]
+  end
+
+  defp verify(_) do
+    steps = [
+      {"compile --warnings-as-errors", :dev},
+      {"format --check-formatted", :dev},
+      {"credo --strict", :dev},
+      # {"sobelow --config", :dev},
+      {"dialyzer", :dev},
+      {"test --cover", :test},
+      {"docs --warnings-as-errors", :dev}
+    ]
+
+    Enum.each(steps, fn {task, env} ->
+      Mix.shell().info(IO.ANSI.format([:bright, "==> mix #{task}", :reset]))
+
+      mix_executable =
+        System.find_executable("mix") ||
+          Mix.raise("Could not find `mix` executable on PATH")
+
+      {_, exit_code} =
+        System.cmd(mix_executable, String.split(task),
+          env: [{"MIX_ENV", to_string(env)}],
+          into: IO.stream(:stdio, :line),
+          stderr_to_stdout: true
+        )
+
+      if exit_code != 0 do
+        Mix.raise("mix #{task} failed (exit code #{exit_code})")
+      end
+    end)
+
+    Mix.shell().info(
+      IO.ANSI.format([:green, :bright, "\nAll verification checks passed!", :reset])
+    )
   end
 end
