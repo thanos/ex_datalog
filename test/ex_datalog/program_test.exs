@@ -73,13 +73,22 @@ defmodule ExDatalog.ProgramTest do
       assert program.facts == [{"parent", [:alice, :bob]}]
     end
 
-    test "multiple facts accumulate in insertion order" do
+    test "multiple facts accumulate; order is normalized by validate/1" do
       program =
         base_program()
         |> Program.add_fact("parent", [:alice, :bob])
         |> Program.add_fact("parent", [:bob, :carol])
 
-      assert program.facts == [
+      # The builder prepends for O(1) per-call cost; validate/1 reverses once
+      # to restore insertion order. Between builder calls the struct stores
+      # facts newest-first.
+      assert length(program.facts) == 2
+      assert {"parent", [:alice, :bob]} in program.facts
+      assert {"parent", [:bob, :carol]} in program.facts
+
+      {:ok, validated} = ExDatalog.validate(program)
+
+      assert validated.facts == [
                {"parent", [:alice, :bob]},
                {"parent", [:bob, :carol]}
              ]

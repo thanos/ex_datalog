@@ -243,6 +243,137 @@ defmodule ExDatalog.Validator.SafetyTest do
     end
   end
 
+  # Regression tests for H1: constraint input variables must be bound by
+  # positive body atoms or by the results of *earlier* arithmetic constraints.
+  # Prior to the fix, all arithmetic results were treated as simultaneously
+  # available, accepting programs that would fail at runtime.
+  describe "constraint ordering (H1 regression)" do
+    test "in-order arithmetic chain is accepted" do
+      # Z = A + 1, W = Z * 2 — Z is bound before W references it
+      rule =
+        Rule.new(
+          Atom.new("out", [Term.var("X"), Term.var("W")]),
+          [{:positive, Atom.new("input", [Term.var("X"), Term.var("A")])}],
+          [
+            Constraint.add(Term.var("A"), Term.const(1), Term.var("Z")),
+            Constraint.mul(Term.var("Z"), Term.const(2), Term.var("W"))
+          ]
+        )
+
+      program =
+        build_program_with_rule(rule, [{"input", [:atom, :integer]}, {"out", [:atom, :integer]}])
+
+      constraint_errors =
+        Enum.filter(Safety.check(program), &(&1.kind == :unbound_constraint_variable))
+
+      assert constraint_errors == []
+    end
+
+    test "out-of-order arithmetic chain is rejected" do
+      # W = Z * 2 appears before Z = A + 1 — Z is not yet bound at constraint 0
+      rule =
+        Rule.new(
+          Atom.new("out", [Term.var("X"), Term.var("W")]),
+          [{:positive, Atom.new("input", [Term.var("X"), Term.var("A")])}],
+          [
+            Constraint.mul(Term.var("Z"), Term.const(2), Term.var("W")),
+            Constraint.add(Term.var("A"), Term.const(1), Term.var("Z"))
+          ]
+        )
+
+      program =
+        build_program_with_rule(rule, [{"input", [:atom, :integer]}, {"out", [:atom, :integer]}])
+
+      errors = Safety.check(program)
+      unbound = Enum.filter(errors, &(&1.kind == :unbound_constraint_variable))
+
+      assert unbound != []
+      assert hd(unbound).context.constraint_index == 0
+      assert "Z" in hd(unbound).context.variables
+    end
+
+    test "comparison referencing an unbound variable is rejected" do
+      # Age > 18, but Age is not bound by any body atom
+      rule =
+        Rule.new(
+          Atom.new("adult", [Term.var("X")]),
+          [{:positive, Atom.new("person", [Term.var("X")])}],
+          [Constraint.gte(Term.var("Age"), Term.const(18))]
+        )
+
+      program =
+        build_program_with_rule(rule, [{"person", [:atom]}, {"adult", [:atom]}])
+
+      errors = Safety.check(program)
+      unbound = Enum.filter(errors, &(&1.kind == :unbound_constraint_variable))
+
+      assert unbound != []
+      assert "Age" in hd(unbound).context.variables
+    end
+
+    test "arithmetic result used in head is accepted even when last constraint" do
+      # Z is the result of the only constraint; it appears in the head.
+      # Head safety uses all-arithmetic-results, so this is valid.
+      rule =
+        Rule.new(
+          Atom.new("out", [Term.var("X"), Term.var("Z")]),
+          [{:positive, Atom.new("input", [Term.var("X"), Term.var("A")])}],
+          [Constraint.add(Term.var("A"), Term.const(1), Term.var("Z"))]
+        )
+
+      program =
+        build_program_with_rule(rule, [{"input", [:atom, :integer]}, {"out", [:atom, :integer]}])
+
+      errors = Safety.check(program)
+      assert Enum.filter(errors, &(&1.kind == :unsafe_variable)) == []
+      assert Enum.filter(errors, &(&1.kind == :unbound_constraint_variable)) == []
+    end
+
+    test "arithmetic result from constraint k is visible to comparison at constraint k+1" do
+      # Z = A + 1 then Z > 0 — the comparison can reference Z produced by prior constraint
+      rule =
+        Rule.new(
+          Atom.new("out", [Term.var("X"), Term.var("Z")]),
+          [{:positive, Atom.new("input", [Term.var("X"), Term.var("A")])}],
+          [
+            Constraint.add(Term.var("A"), Term.const(1), Term.var("Z")),
+            Constraint.gt(Term.var("Z"), Term.const(0))
+          ]
+        )
+
+      program =
+        build_program_with_rule(rule, [{"input", [:atom, :integer]}, {"out", [:atom, :integer]}])
+
+      constraint_errors =
+        Enum.filter(Safety.check(program), &(&1.kind == :unbound_constraint_variable))
+
+      assert constraint_errors == []
+    end
+
+    test "comparison at constraint k cannot reference result introduced at constraint k+1" do
+      # Z > 0 appears before Z = A + 1 — Z is not yet in scope
+      rule =
+        Rule.new(
+          Atom.new("out", [Term.var("X"), Term.var("Z")]),
+          [{:positive, Atom.new("input", [Term.var("X"), Term.var("A")])}],
+          [
+            Constraint.gt(Term.var("Z"), Term.const(0)),
+            Constraint.add(Term.var("A"), Term.const(1), Term.var("Z"))
+          ]
+        )
+
+      program =
+        build_program_with_rule(rule, [{"input", [:atom, :integer]}, {"out", [:atom, :integer]}])
+
+      errors = Safety.check(program)
+      unbound = Enum.filter(errors, &(&1.kind == :unbound_constraint_variable))
+
+      assert unbound != []
+      assert hd(unbound).context.constraint_index == 0
+      assert "Z" in hd(unbound).context.variables
+    end
+  end
+
   describe "multiple rules" do
     test "errors from all rules are collected" do
       rule1 =

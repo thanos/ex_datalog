@@ -148,7 +148,7 @@ defmodule ExDatalog.Program do
            "expected #{arity} values, got #{length(values)}"}
 
       {:ok, _} ->
-        %__MODULE__{program | facts: program.facts ++ [{relation, values}]}
+        %__MODULE__{program | facts: [{relation, values} | program.facts]}
     end
   end
 
@@ -186,7 +186,7 @@ defmodule ExDatalog.Program do
   def add_rule(%__MODULE__{} = program, %Rule{} = rule) do
     with :ok <- validate_atom(program, rule.head),
          :ok <- validate_body(program, rule.body) do
-      %__MODULE__{program | rules: program.rules ++ [rule]}
+      %__MODULE__{program | rules: [rule | program.rules]}
     end
   end
 

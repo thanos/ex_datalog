@@ -35,6 +35,11 @@ defmodule ExDatalog.Validator do
   """
   @spec validate(Program.t()) :: {:ok, Program.t()} | {:error, [Errors.t()]}
   def validate(%Program{} = program) do
+    # Normalize insertion order: the builder prepends facts and rules for O(1)
+    # per-call cost; we reverse once here so validation and the returned program
+    # both see facts/rules in the order they were added.
+    program = %{program | facts: Enum.reverse(program.facts), rules: Enum.reverse(program.rules)}
+
     errors =
       []
       |> check_facts(program)
