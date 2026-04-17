@@ -196,24 +196,22 @@ defmodule ExDatalog.Validator do
 
   # --- Phase 2: Semantic checks ---
 
-  defp check_safety(errors, %Program{rules: rules} = program) when rules == [] do
-    _ = program
+  defp check_safety(errors, %Program{rules: []}) do
     errors
   end
 
   defp check_safety(errors, %Program{} = program) do
-    safety_errors = Safety.check(program)
-    errors ++ safety_errors
+    Enum.reduce(Safety.check(program), errors, &[&1 | &2])
   end
 
-  defp check_stratification(errors, %Program{rules: rules}) when rules == [] do
+  defp check_stratification(errors, %Program{rules: []}) do
     errors
   end
 
   defp check_stratification(errors, %Program{} = program) do
     case Stratification.check(program) do
       :ok -> errors
-      {:error, strat_errors} -> errors ++ strat_errors
+      {:error, strat_errors} -> Enum.reduce(strat_errors, errors, &[&1 | &2])
     end
   end
 

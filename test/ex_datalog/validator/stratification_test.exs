@@ -229,7 +229,11 @@ defmodule ExDatalog.Validator.StratificationTest do
         ])
 
       {:error, errors} = Stratification.check(program)
-      assert errors != []
+      unstrat = Enum.filter(errors, &(&1.kind == :unstratified_negation))
+      assert unstrat != []
+      relations = Enum.flat_map(unstrat, &[&1.context.relation, &1.context.depends_on])
+      assert "p" in relations
+      assert "q" in relations
     end
 
     test "program with no rules is trivially stratifiable" do
@@ -335,6 +339,148 @@ defmodule ExDatalog.Validator.StratificationTest do
       assert strata["parent"] == 0
       assert strata["married"] == 0
       assert strata["bachelor"] >= 1
+    end
+
+    test "three-stratum chain: c negated by b, b negated by a" do
+      # a negates b which negates c:  a --neg--> b --neg--> c
+      # stratum(c) = 0, stratum(b) >= 1, stratum(a) >= 2
+      rule_b =
+        Rule.new(
+          Atom.new("b", [Term.var("X")]),
+          [
+            {:positive, Atom.new("c", [Term.var("X")])},
+            {:negative, Atom.new("c", [Term.var("X")])}
+          ]
+        )
+
+      rule_a =
+        Rule.new(
+          Atom.new("a", [Term.var("X")]),
+          [
+            {:positive, Atom.new("b", [Term.var("X")])},
+            {:negative, Atom.new("b", [Term.var("X")])}
+          ]
+        )
+
+      program =
+        build_program_with_rules([rule_b, rule_a], [
+          {"c", [:atom]},
+          {"b", [:atom]},
+          {"a", [:atom]}
+        ])
+
+      strata = Stratification.assign_strata(program)
+
+      assert strata["c"] == 0
+      assert strata["b"] >= 1
+      assert strata["a"] >= strata["b"] + 1
+    end
+  end
+
+  # Regression tests for the C1 Tarjan SCC bug:
+  # Prior to the fix, strongconnect re-entered already-indexed vertices from
+  # the outer reduce loop, producing spurious singleton SCCs for every
+  # recursively-visited node.
+  describe "compute_sccs/1 — complex graph shapes (C1 regression)" do
+    test "3-node cycle produces exactly one SCC" do
+      # a -> b -> c -> a
+      graph = %{
+        "a" => [{"b", :positive}],
+        "b" => [{"c", :positive}],
+        "c" => [{"a", :positive}]
+      }
+
+      sccs = Stratification.compute_sccs(graph)
+
+      assert length(sccs) == 1
+      assert Enum.sort(hd(sccs)) == ["a", "b", "c"]
+    end
+
+    test "branching cycle: a->b, a->c, b->c, c->a produces exactly one SCC" do
+      graph = %{
+        "a" => [{"b", :positive}, {"c", :positive}],
+        "b" => [{"c", :positive}],
+        "c" => [{"a", :positive}]
+      }
+
+      sccs = Stratification.compute_sccs(graph)
+
+      assert length(sccs) == 1
+      assert Enum.sort(hd(sccs)) == ["a", "b", "c"]
+    end
+
+    test "diamond: a->b, a->c, b->d, c->d produces four singleton SCCs" do
+      graph = %{
+        "a" => [{"b", :positive}, {"c", :positive}],
+        "b" => [{"d", :positive}],
+        "c" => [{"d", :positive}],
+        "d" => []
+      }
+
+      sccs = Stratification.compute_sccs(graph)
+      all_nodes = Enum.sort(List.flatten(sccs))
+
+      assert length(sccs) == 4
+      assert all_nodes == ["a", "b", "c", "d"]
+    end
+
+    test "3-cycle plus external node produces two SCCs" do
+      # a -> b -> c -> a, plus a -> d (d outside cycle)
+      graph = %{
+        "a" => [{"b", :positive}, {"d", :positive}],
+        "b" => [{"c", :positive}],
+        "c" => [{"a", :positive}],
+        "d" => []
+      }
+
+      sccs = Stratification.compute_sccs(graph)
+
+      assert length(sccs) == 2
+      cycle_scc = Enum.find(sccs, &("a" in &1))
+      assert Enum.sort(cycle_scc) == ["a", "b", "c"]
+      singleton_scc = Enum.find(sccs, &("d" in &1))
+      assert singleton_scc == ["d"]
+    end
+
+    test "two disjoint 2-cycles produce exactly two SCCs" do
+      graph = %{
+        "a" => [{"b", :positive}],
+        "b" => [{"a", :positive}],
+        "c" => [{"d", :positive}],
+        "d" => [{"c", :positive}]
+      }
+
+      sccs = Stratification.compute_sccs(graph)
+
+      assert length(sccs) == 2
+      ab_scc = Enum.find(sccs, &("a" in &1))
+      assert Enum.sort(ab_scc) == ["a", "b"]
+      cd_scc = Enum.find(sccs, &("c" in &1))
+      assert Enum.sort(cd_scc) == ["c", "d"]
+    end
+
+    test "2-node cycle plus dependent node: a<->b, b->c produces two SCCs" do
+      graph = %{
+        "a" => [{"b", :positive}],
+        "b" => [{"a", :positive}, {"c", :positive}],
+        "c" => []
+      }
+
+      sccs = Stratification.compute_sccs(graph)
+
+      assert length(sccs) == 2
+      cycle_scc = Enum.find(sccs, &("a" in &1))
+      assert Enum.sort(cycle_scc) == ["a", "b"]
+      assert ["c"] in sccs
+    end
+
+    test "no edges: each node is its own singleton SCC" do
+      graph = %{"a" => [], "b" => [], "c" => []}
+
+      sccs = Stratification.compute_sccs(graph)
+
+      assert length(sccs) == 3
+      assert Enum.all?(sccs, &(length(&1) == 1))
     end
   end
 end

@@ -198,5 +198,35 @@ defmodule ExDatalog.ValidatorTest do
       unsafe = Enum.filter(errors, &(&1.kind == :unsafe_variable))
       assert unsafe != []
     end
+
+    # Regression test for C2: semantic errors must appear in discovery order
+    # in the final error list, not reversed.
+    test "semantic errors are returned in discovery order (C2 regression)" do
+      # Three rules each with a distinct unsafe variable: Z0, Z1, Z2.
+      # After fix, errors for rule 0 must appear before rule 1 before rule 2.
+      rules =
+        Enum.map(0..2, fn i ->
+          Rule.new(
+            Atom.new("r", [Term.var("X"), Term.var("Z#{i}")]),
+            [{:positive, Atom.new("a", [Term.var("X")])}]
+          )
+        end)
+
+      program =
+        Program.new()
+        |> Program.add_relation("a", [:atom])
+        |> Program.add_relation("r", [:atom, :atom])
+        |> then(&%{&1 | rules: rules})
+
+      assert {:error, errors} = ExDatalog.validate(program)
+
+      unsafe = Enum.filter(errors, &(&1.kind == :unsafe_variable))
+      assert length(unsafe) == 3
+
+      rule_indices = Enum.map(unsafe, & &1.context.rule_index)
+
+      assert rule_indices == Enum.sort(rule_indices),
+             "Expected errors in rule-index order, got: #{inspect(rule_indices)}"
+    end
   end
 end

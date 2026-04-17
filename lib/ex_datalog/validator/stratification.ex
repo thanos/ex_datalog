@@ -42,18 +42,17 @@ defmodule ExDatalog.Validator.Stratification do
 
   Returns SCCs in reverse topological order (i.e., leaves first).
   """
-  @dialyzer {:nowarn_function, compute_sccs: 1}
   @spec compute_sccs(graph()) :: [scc()]
   def compute_sccs(graph) do
     all_vertices = all_vertices(graph)
 
-    {state, _} =
-      Enum.reduce(all_vertices, {initial_state(), MapSet.new()}, fn v, {s, visited} ->
-        if MapSet.member?(visited, v) do
-          {s, visited}
+    state =
+      Enum.reduce(all_vertices, initial_state(), fn v, s ->
+        if Map.has_key?(s.indices, v) do
+          s
         else
-          {new_s, new_visited} = strongconnect(v, graph, s)
-          {new_s, MapSet.put(new_visited, v)}
+          {new_s, _} = strongconnect(v, graph, s)
+          new_s
         end
       end)
 
@@ -67,9 +66,8 @@ defmodule ExDatalog.Validator.Stratification do
   every SCC that contains a negative edge.
   """
   @spec check(ExDatalog.Program.t()) :: :ok | {:error, [Errors.t()]}
-  def check(%ExDatalog.Program{rules: rules} = program) do
+  def check(%ExDatalog.Program{} = program) do
     graph = build_graph(program)
-    _ = rules
 
     # Only include rules with valid body literals in the stratification check.
     # Rules with invalid body literals are caught by structural validation.
@@ -196,7 +194,7 @@ defmodule ExDatalog.Validator.Stratification do
         cond do
           not Map.has_key?(s.indices, w) ->
             {new_s, _} = strongconnect(w, graph, s)
-            lowlink_v = min(Map.get(s.lowlinks, v, index), Map.get(new_s.lowlinks, w, index))
+            lowlink_v = min(Map.get(new_s.lowlinks, v, index), Map.get(new_s.lowlinks, w, index))
             new_s = put_in(new_s.lowlinks[v], lowlink_v)
             {new_s, MapSet.put(visited, w)}
 
