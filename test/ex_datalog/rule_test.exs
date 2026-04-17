@@ -2,7 +2,7 @@ defmodule ExDatalog.RuleTest do
   use ExUnit.Case, async: true
   doctest ExDatalog.Rule
 
-  alias ExDatalog.{Rule, Atom, Term, Constraint}
+  alias ExDatalog.{Atom, Constraint, Rule, Term}
 
   defp parent_atom(x, y), do: Atom.new("parent", [Term.var(x), Term.var(y)])
   defp ancestor_atom(x, y), do: Atom.new("ancestor", [Term.var(x), Term.var(y)])

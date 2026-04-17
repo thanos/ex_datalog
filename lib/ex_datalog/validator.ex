@@ -27,7 +27,7 @@ defmodule ExDatalog.Validator do
 
   """
 
-  alias ExDatalog.{Program, Atom, Rule}
+  alias ExDatalog.{Atom, Program, Rule}
   alias ExDatalog.Validator.Errors
 
   @doc """

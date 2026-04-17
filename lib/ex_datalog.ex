@@ -1,4 +1,6 @@
 defmodule ExDatalog do
+  @compile {:no_warn_undefined, [ExDatalog.Compiler, ExDatalog.Engine.Naive]}
+
   @moduledoc """
   ExDatalog — a pure Elixir Datalog engine.
 

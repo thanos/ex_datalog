@@ -2,7 +2,7 @@ defmodule ExDatalog.ProgramTest do
   use ExUnit.Case, async: true
   doctest ExDatalog.Program
 
-  alias ExDatalog.{Program, Rule, Atom, Term}
+  alias ExDatalog.{Atom, Program, Rule, Term}
 
   defp base_program do
     Program.new()

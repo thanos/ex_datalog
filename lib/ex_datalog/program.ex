@@ -94,7 +94,7 @@ defmodule ExDatalog.Program do
   end
 
   def add_relation(%__MODULE__{} = _program, _name, types)
-      when not is_list(types) or length(types) == 0 do
+      when not is_list(types) or types == [] do
     {:error, "types must be a non-empty list"}
   end
 
@@ -228,21 +228,38 @@ defmodule ExDatalog.Program do
 
   # --- Private helpers ---
 
-  defp validate_atom(%__MODULE__{relations: rels}, %Atom{relation: rel, terms: terms}) do
-    case Map.fetch(rels, rel) do
-      :error ->
-        {:error, "atom references undefined relation #{inspect(rel)}"}
+  defp validate_atom(program, atom) do
+    with :ok <- validate_atom_relation(atom, program),
+         :ok <- validate_atom_arity(atom, program),
+         :ok <- validate_atom_terms(atom) do
+      :ok
+    end
+  end
 
+  defp validate_atom_relation(%Atom{relation: rel}, %__MODULE__{relations: rels}) do
+    if Map.has_key?(rels, rel) do
+      :ok
+    else
+      {:error, "atom references undefined relation #{inspect(rel)}"}
+    end
+  end
+
+  defp validate_atom_arity(%Atom{relation: rel, terms: terms}, %__MODULE__{relations: rels}) do
+    case Map.fetch(rels, rel) do
       {:ok, %{arity: arity}} when length(terms) != arity ->
         {:error,
          "arity mismatch for relation #{inspect(rel)}: " <>
            "expected #{arity} terms, got #{length(terms)}"}
 
-      {:ok, _} ->
-        case Enum.find(terms, fn t -> not Term.valid?(t) end) do
-          nil -> :ok
-          bad -> {:error, "invalid term #{inspect(bad)} in atom for relation #{inspect(rel)}"}
-        end
+      _ ->
+        :ok
+    end
+  end
+
+  defp validate_atom_terms(%Atom{relation: rel, terms: terms}) do
+    case Enum.find(terms, fn t -> not Term.valid?(t) end) do
+      nil -> :ok
+      bad -> {:error, "invalid term #{inspect(bad)} in atom for relation #{inspect(rel)}"}
     end
   end
 
