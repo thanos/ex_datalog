@@ -116,16 +116,35 @@ defmodule ExDatalog do
   @doc """
   Compiles a validated program to an engine-neutral IR.
 
-  Runs validation first. Returns `{:ok, ir}` or `{:error, errors}`.
+  Runs validation first. Returns `{:ok, %ExDatalog.IR{}}` or
+  `{:error, errors}`.
 
-  Available in Phase 3.
+  The IR is deterministic: the same program always produces the same IR.
+  Rules are sorted by `(stratum, relation_name, rule_id)`. Facts are sorted
+  by `(relation_name, values)`. Relations are sorted by name.
+
+  ## Examples
+
+      iex> alias ExDatalog.{Program, Rule, Atom, Term}
+      iex> program =
+      ...>   Program.new()
+      ...>   |> Program.add_relation("edge", [:atom, :atom])
+      ...>   |> Program.add_relation("path", [:atom, :atom])
+      ...>   |> Program.add_rule(
+      ...>     Rule.new(
+      ...>       Atom.new("path", [Term.var("X"), Term.var("Y")]),
+      ...>       [{:positive, Atom.new("edge", [Term.var("X"), Term.var("Y")])}]
+      ...>     )
+      ...>   )
+      iex> {:ok, ir} = ExDatalog.compile(program)
+      iex> length(ir.rules) == 1 and length(ir.relations) == 2
+      true
+      true
+
   """
-  @dialyzer {:no_return, compile: 1}
-  @spec compile(Program.t()) :: {:ok, term()} | {:error, [Validator.Error.t()]}
+  @spec compile(Program.t()) :: {:ok, ExDatalog.IR.t()} | {:error, [Validator.Error.t()]}
   def compile(%Program{} = program) do
-    with {:ok, validated} <- validate(program) do
-      ExDatalog.Compiler.compile(validated)
-    end
+    ExDatalog.Compiler.compile(program)
   end
 
   @doc """
