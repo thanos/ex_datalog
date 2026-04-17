@@ -1,6 +1,4 @@
 defmodule ExDatalog do
-  @compile {:no_warn_undefined, [ExDatalog.Compiler, ExDatalog.Engine.Naive]}
-
   @moduledoc """
   ExDatalog — a pure Elixir Datalog engine.
 
@@ -152,11 +150,15 @@ defmodule ExDatalog do
 
   Returns `{:ok, ExDatalog.Result.t()}` or `{:error, reason}`.
 
-  Available in Phase 4.
+  ## Options
+
+  - `:engine` — backend module (default: `ExDatalog.Engine.Naive`)
+  - `:storage` — storage module (default: `ExDatalog.Storage.Map`)
+  - `:max_iterations` — fixpoint iteration limit (default: 10_000)
+  - `:timeout_ms` — wall-clock timeout in ms (default: 30_000)
   """
-  @dialyzer {:no_return, evaluate: 2}
-  @spec evaluate(term(), keyword()) :: {:ok, term()} | {:error, term()}
-  def evaluate(ir, opts \\ []) do
+  @spec evaluate(ExDatalog.IR.t(), keyword()) :: {:ok, ExDatalog.Result.t()} | {:error, term()}
+  def evaluate(%ExDatalog.IR{} = ir, opts \\ []) do
     engine = Keyword.get(opts, :engine, ExDatalog.Engine.Naive)
     engine.evaluate(ir, opts)
   end
@@ -168,14 +170,24 @@ defmodule ExDatalog do
 
   Returns `{:ok, ExDatalog.Result.t()}` or `{:error, reason}`.
 
-  Available end-to-end in Phase 4. Validation is available in Phase 1.
-
   ## Options
 
-  See module documentation for available options.
+  See `evaluate/2` for available options.
+
+  ## Examples
+
+      iex> alias ExDatalog.{Program, Rule, Atom, Term}
+      iex> program =
+      ...>   Program.new()
+      ...>   |> Program.add_relation("parent", [:atom, :atom])
+      ...>   |> Program.add_fact("parent", [:alice, :bob])
+      iex> {:ok, result} = ExDatalog.query(program)
+      iex> ExDatalog.Result.size(result, "parent")
+      1
+
   """
-  @dialyzer {:no_return, query: 2}
-  @spec query(Program.t(), keyword()) :: {:ok, term()} | {:error, [Validator.Error.t()] | term()}
+  @spec query(Program.t(), keyword()) ::
+          {:ok, ExDatalog.Result.t()} | {:error, [Validator.Error.t()] | term()}
   def query(%Program{} = program, opts \\ []) do
     with {:ok, validated} <- validate(program),
          {:ok, ir} <- ExDatalog.Compiler.compile(validated) do
