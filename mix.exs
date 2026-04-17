@@ -114,7 +114,7 @@ defmodule ExDatalog.MixProject do
         ],
         Validation: [
           ExDatalog.Validator,
-          ExDatalog.Validator.Errors,
+          ExDatalog.Validator.Error,
           ExDatalog.Validator.Safety,
           ExDatalog.Validator.Stratification
         ],

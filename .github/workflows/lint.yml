@@ -19,7 +19,7 @@ jobs:
     # The matrix for compatibility testing lives in build.yml.
     env:
       ELIXIR_VERSION: "1.19.5"
-      OTP_VERSION: "28.3.1"
+      OTP_VERSION: "28"
 
     steps:
       - name: Checkout code
@@ -80,7 +80,7 @@ jobs:
 
     env:
       ELIXIR_VERSION: "1.19.5"
-      OTP_VERSION: "28.3.1"
+      OTP_VERSION: "28"
       MIX_ENV: dev
 
     steps:

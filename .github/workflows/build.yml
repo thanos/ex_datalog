@@ -17,24 +17,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # --- Elixir 1.18.x ---
-          - elixir: "1.18.0"
-            otp: "27.0"
-          - elixir: "1.18.4"
-            otp: "27.3"
-
-          # --- Elixir 1.19.x ---
-          - elixir: "1.19.0"
-            otp: "27.1"
           - elixir: "1.19.5"
-            otp: "27.3"
-          - elixir: "1.19.5"
-            otp: "28.3.1"
-            coverage: true   # coverage reported for the canonical version only
-
-          # --- Elixir 1.18.x on OTP 28 ---
-          - elixir: "1.18.4"
-            otp: "28.3.1"
+            otp: "28"
+            coverage: true
 
     steps:
       - name: Checkout code
