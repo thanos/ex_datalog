@@ -16,7 +16,7 @@ defmodule ExDatalog.Validator.Stratification do
   """
 
   alias ExDatalog.{Atom, Rule}
-  alias ExDatalog.Validator.Errors
+  alias ExDatalog.Validator.Error
 
   @type edge :: {String.t(), :positive | :negative}
   @type graph :: %{String.t() => [edge()]}
@@ -57,7 +57,7 @@ defmodule ExDatalog.Validator.Stratification do
   Returns `:ok` if all SCCs are stratifiable, or `{:error, errors}` listing
   every SCC that contains a negative edge.
   """
-  @spec check(ExDatalog.Program.t()) :: :ok | {:error, [Errors.t()]}
+  @spec check(ExDatalog.Program.t()) :: :ok | {:error, [Error.t()]}
   def check(%ExDatalog.Program{} = program) do
     graph = build_graph(program)
 
@@ -116,7 +116,7 @@ defmodule ExDatalog.Validator.Stratification do
         polarity == :negative and MapSet.member?(scc_set, dep)
       end)
       |> Enum.map(fn {dep, _} ->
-        Errors.new(
+        Error.new(
           :unstratified_negation,
           %{relation: rel, depends_on: dep, scc: Enum.sort(scc)},
           "unstratifiable negation: relation #{inspect(rel)} depends negatively " <>

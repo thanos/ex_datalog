@@ -228,5 +228,46 @@ defmodule ExDatalog.ValidatorTest do
       assert rule_indices == Enum.sort(rule_indices),
              "Expected errors in rule-index order, got: #{inspect(rule_indices)}"
     end
+
+    # L7 regression: integration test combining structural + safety + stratification errors.
+    test "errors from all three validation phases are collected together" do
+      # Phase 1 (structural): rule body references undefined relation "no_such_rel"
+      # Phase 2 (safety): variable Z in head is unsafe
+      # Phase 2 (stratification): p depends negatively on itself
+      rule1 =
+        Rule.new(
+          Atom.new("r", [Term.var("X"), Term.var("Z")]),
+          [{:positive, Atom.new("no_such_rel", [Term.var("X")])}]
+        )
+
+      rule2 =
+        Rule.new(
+          Atom.new("p", [Term.var("X")]),
+          [
+            {:positive, Atom.new("q", [Term.var("X")])},
+            {:negative, Atom.new("p", [Term.var("X")])}
+          ]
+        )
+
+      program =
+        Program.new()
+        |> Program.add_relation("p", [:atom])
+        |> Program.add_relation("q", [:atom])
+        |> Program.add_relation("r", [:atom, :atom])
+        |> then(&%{&1 | rules: [rule1, rule2]})
+
+      assert {:error, errors} = ExDatalog.validate(program)
+
+      kinds = Enum.map(errors, & &1.kind)
+
+      assert :undefined_relation in kinds,
+             "Expected :undefined_relation error, got: #{inspect(kinds)}"
+
+      assert :unsafe_variable in kinds,
+             "Expected :unsafe_variable error, got: #{inspect(kinds)}"
+
+      assert :unstratified_negation in kinds,
+             "Expected :unstratified_negation error, got: #{inspect(kinds)}"
+    end
   end
 end

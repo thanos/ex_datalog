@@ -15,7 +15,7 @@ defmodule ExDatalog.Program do
 
   Semantic validation (variable safety, stratification, constraint binding)
   is done separately by `ExDatalog.Validator.validate/1`, which returns
-  `{:error, [ExDatalog.Validator.Errors.t()]}` with structured error structs.
+  `{:error, [ExDatalog.Validator.Error.t()]}` with structured error structs.
 
   **Note:** builder methods perform a subset of the same checks as the
   validator (relation existence, arity). This is intentional: the builder

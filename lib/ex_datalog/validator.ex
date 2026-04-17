@@ -25,15 +25,15 @@ defmodule ExDatalog.Validator do
   """
 
   alias ExDatalog.{Atom, Program, Rule}
-  alias ExDatalog.Validator.{Errors, Safety, Stratification}
+  alias ExDatalog.Validator.{Error, Safety, Stratification}
 
   @doc """
   Runs the full validation pipeline (structural + semantic) on a program.
 
-  Returns `{:ok, program}` on success, or `{:error, [%Errors{}]}` with all
+  Returns `{:ok, program}` on success, or `{:error, [%Error{}]}` with all
   accumulated errors on failure.
   """
-  @spec validate(Program.t()) :: {:ok, Program.t()} | {:error, [Errors.t()]}
+  @spec validate(Program.t()) :: {:ok, Program.t()} | {:error, [Error.t()]}
   def validate(%Program{} = program) do
     # Normalize insertion order: the builder prepends facts and rules for O(1)
     # per-call cost; we reverse once here so validation and the returned program
@@ -70,7 +70,7 @@ defmodule ExDatalog.Validator do
       errors
     else
       [
-        Errors.new(
+        Error.new(
           :undefined_relation,
           %{relation: relation, fact_index: idx},
           "fact at index #{idx} references undefined relation #{inspect(relation)}"
@@ -84,7 +84,7 @@ defmodule ExDatalog.Validator do
     case Map.fetch(rels, relation) do
       {:ok, %{arity: arity}} when length(values) != arity ->
         [
-          Errors.new(
+          Error.new(
             :arity_mismatch,
             %{relation: relation, expected: arity, got: length(values), fact_index: idx},
             "fact at index #{idx} for relation #{inspect(relation)}: " <>
@@ -127,7 +127,7 @@ defmodule ExDatalog.Validator do
 
         other ->
           [
-            Errors.new(
+            Error.new(
               :invalid_body_literal,
               Map.put(context, :literal, inspect(other)),
               "rule #{idx}, body position #{body_idx}: invalid literal #{inspect(other)}; " <>
@@ -151,7 +151,7 @@ defmodule ExDatalog.Validator do
       errors
     else
       [
-        Errors.new(
+        Error.new(
           :undefined_relation,
           Map.put(context, :relation, relation),
           "#{location(context)} references undefined relation #{inspect(relation)}"
@@ -165,7 +165,7 @@ defmodule ExDatalog.Validator do
     case Map.fetch(rels, relation) do
       {:ok, %{arity: arity}} when length(terms) != arity ->
         [
-          Errors.new(
+          Error.new(
             :arity_mismatch,
             Map.merge(context, %{relation: relation, expected: arity, got: length(terms)}),
             "#{location(context)} relation #{inspect(relation)}: " <>
@@ -187,7 +187,7 @@ defmodule ExDatalog.Validator do
         acc
       else
         [
-          Errors.new(
+          Error.new(
             :invalid_term,
             Map.merge(context, %{relation: relation, term_index: term_idx, term: inspect(term)}),
             "#{location(context)} relation #{inspect(relation)}: " <>

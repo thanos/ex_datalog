@@ -87,7 +87,7 @@ defmodule ExDatalog do
   Validates a program, returning structural and semantic errors.
 
   Returns `{:ok, program}` if valid, `{:error, errors}` otherwise.
-  `errors` is a list of `ExDatalog.Validator.Errors.t()`.
+  `errors` is a list of `ExDatalog.Validator.Error.t()`.
 
   Structural checks (Phase 1):
   - Relation references exist.
@@ -108,7 +108,7 @@ defmodule ExDatalog do
       true
 
   """
-  @spec validate(Program.t()) :: {:ok, Program.t()} | {:error, [Validator.Errors.t()]}
+  @spec validate(Program.t()) :: {:ok, Program.t()} | {:error, [Validator.Error.t()]}
   def validate(%Program{} = program) do
     Validator.validate(program)
   end
@@ -121,7 +121,7 @@ defmodule ExDatalog do
   Available in Phase 3.
   """
   @dialyzer {:no_return, compile: 1}
-  @spec compile(Program.t()) :: {:ok, term()} | {:error, [Validator.Errors.t()]}
+  @spec compile(Program.t()) :: {:ok, term()} | {:error, [Validator.Error.t()]}
   def compile(%Program{} = program) do
     with {:ok, validated} <- validate(program) do
       ExDatalog.Compiler.compile(validated)
@@ -156,7 +156,7 @@ defmodule ExDatalog do
   See module documentation for available options.
   """
   @dialyzer {:no_return, query: 2}
-  @spec query(Program.t(), keyword()) :: {:ok, term()} | {:error, [Validator.Errors.t()] | term()}
+  @spec query(Program.t(), keyword()) :: {:ok, term()} | {:error, [Validator.Error.t()] | term()}
   def query(%Program{} = program, opts \\ []) do
     with {:ok, validated} <- validate(program),
          {:ok, ir} <- ExDatalog.Compiler.compile(validated) do

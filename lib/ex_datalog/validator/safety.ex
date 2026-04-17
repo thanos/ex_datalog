@@ -40,19 +40,19 @@ defmodule ExDatalog.Validator.Safety do
   """
 
   alias ExDatalog.{Atom, Constraint, Rule}
-  alias ExDatalog.Validator.Errors
+  alias ExDatalog.Validator.Error
 
   @doc """
-  Checks all rules in a program for variable safety violations.
+    Checks all rules in a program for variable safety violations.
 
-  Returns a list of `ExDatalog.Validator.Errors.t()` (empty if all rules are safe).
+  Returns a list of `ExDatalog.Validator.Error.t()` (empty if all rules are safe).
 
   Each error includes:
   - `kind` — `:unsafe_variable`, `:unbound_constraint_variable`, or `:wildcard_in_head`
   - `context` — `%{rule_index: i, variable: "X", ...}`
   - `message` — human-readable description
   """
-  @spec check(ExDatalog.Program.t()) :: [Errors.t()]
+  @spec check(ExDatalog.Program.t()) :: [Error.t()]
   def check(%ExDatalog.Program{rules: rules}) do
     rules
     |> Enum.with_index()
@@ -66,7 +66,7 @@ defmodule ExDatalog.Validator.Safety do
   body literals (not `{:positive, _}` or `{:negative, _}`) are
   skipped — the structural validator catches those.
   """
-  @spec check_rule(Rule.t(), non_neg_integer()) :: [Errors.t()]
+  @spec check_rule(Rule.t(), non_neg_integer()) :: [Error.t()]
   def check_rule(%Rule{body: body} = rule, rule_index) do
     # Skip safety checks if any body literal is invalid — structural
     # validation will catch those.
@@ -124,7 +124,7 @@ defmodule ExDatalog.Validator.Safety do
     Enum.reduce(head.terms, errors, fn
       :wildcard, acc ->
         [
-          Errors.new(
+          Error.new(
             :wildcard_in_head,
             %{rule_index: rule_index, relation: head.relation},
             "rule #{rule_index}: wildcard in head of relation #{inspect(head.relation)}; " <>
@@ -144,7 +144,7 @@ defmodule ExDatalog.Validator.Safety do
         acc
       else
         [
-          Errors.new(
+          Error.new(
             :unsafe_variable,
             %{rule_index: rule_index, variable: var},
             "rule #{rule_index}: variable #{inspect(var)} in head is not bound " <>
@@ -185,7 +185,7 @@ defmodule ExDatalog.Validator.Safety do
         acc
       else
         [
-          Errors.new(
+          Error.new(
             :unbound_constraint_variable,
             %{rule_index: rule_index, constraint_index: c_idx, variables: unbound, op: c.op},
             "rule #{rule_index}, constraint #{c_idx}: #{Enum.join(unbound, ", ")} " <>
