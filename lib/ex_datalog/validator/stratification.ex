@@ -22,11 +22,7 @@ defmodule ExDatalog.Validator.Stratification do
   @type graph :: %{String.t() => [edge()]}
   @type scc :: [String.t()]
 
-  @doc """
-  Builds the dependency graph from a program's rules.
-
-  Returns a map from each head relation to a list of `{dependency, polarity}` pairs.
-  """
+  @doc false
   @spec build_graph(ExDatalog.Program.t()) :: graph()
   def build_graph(%ExDatalog.Program{rules: rules}) do
     Enum.reduce(rules, %{}, fn rule, graph ->
@@ -37,11 +33,7 @@ defmodule ExDatalog.Validator.Stratification do
     end)
   end
 
-  @doc """
-  Computes strongly connected components using Tarjan's algorithm.
-
-  Returns SCCs in reverse topological order (i.e., leaves first).
-  """
+  @doc false
   @spec compute_sccs(graph()) :: [scc()]
   def compute_sccs(graph) do
     all_vertices = all_vertices(graph)
@@ -100,10 +92,7 @@ defmodule ExDatalog.Validator.Stratification do
     assign_strata_greedy(graph, sccs)
   end
 
-  @doc """
-  Returns a list of dependency edges for a rule.
-  Each edge is `{dependency_relation, polarity}`.
-  """
+  @doc false
   @spec body_dependencies(Rule.t()) :: [edge()]
   def body_dependencies(%Rule{body: body}) do
     Enum.flat_map(body, fn

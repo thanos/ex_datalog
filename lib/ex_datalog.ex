@@ -94,8 +94,9 @@ defmodule ExDatalog do
   - Arities match declared schemas.
   - Terms are valid.
 
-  Semantic checks (Phase 2, not yet available):
+  Semantic checks (Phase 2):
   - Variable safety and range restriction.
+  - Constraint binding and ordering.
   - Stratified negation.
 
   ## Examples
@@ -107,7 +108,7 @@ defmodule ExDatalog do
       true
 
   """
-  @spec validate(Program.t()) :: {:ok, Program.t()} | {:error, list()}
+  @spec validate(Program.t()) :: {:ok, Program.t()} | {:error, [Validator.Errors.t()]}
   def validate(%Program{} = program) do
     Validator.validate(program)
   end
@@ -120,7 +121,7 @@ defmodule ExDatalog do
   Available in Phase 3.
   """
   @dialyzer {:no_return, compile: 1}
-  @spec compile(Program.t()) :: {:ok, term()} | {:error, list()}
+  @spec compile(Program.t()) :: {:ok, term()} | {:error, [Validator.Errors.t()]}
   def compile(%Program{} = program) do
     with {:ok, validated} <- validate(program) do
       ExDatalog.Compiler.compile(validated)
@@ -155,7 +156,7 @@ defmodule ExDatalog do
   See module documentation for available options.
   """
   @dialyzer {:no_return, query: 2}
-  @spec query(Program.t(), keyword()) :: {:ok, term()} | {:error, term()}
+  @spec query(Program.t(), keyword()) :: {:ok, term()} | {:error, [Validator.Errors.t()] | term()}
   def query(%Program{} = program, opts \\ []) do
     with {:ok, validated} <- validate(program),
          {:ok, ir} <- ExDatalog.Compiler.compile(validated) do

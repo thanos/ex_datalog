@@ -113,7 +113,9 @@ defmodule ExDatalog.MixProject do
         ],
         Validation: [
           ExDatalog.Validator,
-          ExDatalog.Validator.Errors
+          ExDatalog.Validator.Errors,
+          ExDatalog.Validator.Safety,
+          ExDatalog.Validator.Stratification
         ],
         "Compiler & IR": ~r/ExDatalog\.(Compiler|IR).*/,
         Engine: ~r/ExDatalog\.Engine.*/,

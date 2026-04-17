@@ -9,9 +9,20 @@ defmodule ExDatalog.Program do
   - **Rules** — inference rules that derive new facts from existing ones.
 
   Programs are built using a pipeline of builder functions. Structural
-  validation (arity checking, relation existence) is done at build time.
-  Semantic validation (variable safety, stratification) is done by
-  `ExDatalog.Validator`.
+  validation (arity checking, relation existence) is done at build time by
+  `add_relation/3`, `add_fact/3`, and `add_rule/2`. On failure these return
+  `{:error, String.t()}` with a human-readable message.
+
+  Semantic validation (variable safety, stratification, constraint binding)
+  is done separately by `ExDatalog.Validator.validate/1`, which returns
+  `{:error, [ExDatalog.Validator.Errors.t()]}` with structured error structs.
+
+  **Note:** builder methods perform a subset of the same checks as the
+  validator (relation existence, arity). This is intentional: the builder
+  provides early feedback for interactive construction, while the validator
+  is the canonical source of truth and catches issues the builder cannot
+  (e.g., programs assembled by directly modifying the struct, which bypasses
+  builder validation).
 
   ## Example
 

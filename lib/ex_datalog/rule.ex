@@ -38,6 +38,7 @@ defmodule ExDatalog.Rule do
           constraints: [Constraint.t()]
         }
 
+  @enforce_keys [:head]
   defstruct [:head, body: [], constraints: []]
 
   @doc """

@@ -50,12 +50,22 @@ defmodule ExDatalog.Constraint do
   @all_ops @comparison_ops ++ @arithmetic_ops
 
   @type op :: :gt | :lt | :gte | :lte | :eq | :neq | :add | :sub | :mul | :div
-  @type t :: %__MODULE__{
-          op: op(),
+
+  @type comparison :: %__MODULE__{
+          op: :gt | :lt | :gte | :lte | :eq | :neq,
           left: Term.t(),
           right: Term.t(),
-          result: Term.t() | nil
+          result: nil
         }
+
+  @type arithmetic :: %__MODULE__{
+          op: :add | :sub | :mul | :div,
+          left: Term.t(),
+          right: Term.t(),
+          result: {:var, String.t()}
+        }
+
+  @type t :: comparison() | arithmetic()
 
   defstruct [:op, :left, :right, :result]
 

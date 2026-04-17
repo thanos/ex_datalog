@@ -27,6 +27,7 @@ defmodule ExDatalog.Atom do
           terms: [Term.t()]
         }
 
+  @enforce_keys [:relation, :terms]
   defstruct [:relation, :terms]
 
   @doc """

@@ -46,7 +46,11 @@ defmodule ExDatalog.Term do
   @doc """
   Constructs a constant term.
 
-  Accepts integers, strings, and atoms.
+  Accepts integers, strings, and atoms. Note that `true`, `false`, and `nil`
+  are valid Elixir atoms and are accepted as constants, producing
+  `{:const, true}`, `{:const, false}`, and `{:const, nil}` respectively.
+  Use these with care — `nil` in particular may be confused with an absent
+  value downstream.
 
   ## Examples
 
