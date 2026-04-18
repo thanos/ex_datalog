@@ -45,7 +45,7 @@ defmodule ExDatalog.MixProject do
 
   def application do
     [
-      extra_applications: [:logger]
+      extra_applications: [:logger, :telemetry]
     ]
   end
 
@@ -54,6 +54,7 @@ defmodule ExDatalog.MixProject do
 
   defp deps do
     [
+      {:telemetry, "~> 1.2"},
       # Dev + test tooling
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

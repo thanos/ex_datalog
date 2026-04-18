@@ -64,22 +64,43 @@ defmodule ExDatalog.Engine.Naive do
   @impl ExDatalog.Engine
   @spec evaluate(IR.t(), keyword()) :: {:ok, Result.t()} | {:error, term()}
   def evaluate(%IR{} = ir, opts \\ []) do
-    case validate_stratification(ir) do
-      {:error, _} = err ->
-        err
+    ExDatalog.Telemetry.emit_start(ir)
+    start_time = System.monotonic_time(:microsecond)
+    stratum_count = length(ir.strata)
 
-      :ok ->
-        do_evaluate(ir, opts)
+    try do
+      case validate_stratification(ir) do
+        {:error, _} = err ->
+          ExDatalog.Telemetry.emit_stop(start_time, 0, %{}, stratum_count)
+          err
+
+        :ok ->
+          do_evaluate_inner(ir, opts, start_time, stratum_count)
+      end
+    rescue
+      e ->
+        ExDatalog.Telemetry.emit_exception(start_time, :error, e, __STACKTRACE__, stratum_count)
+
+        reraise e, __STACKTRACE__
+    catch
+      kind, reason ->
+        ExDatalog.Telemetry.emit_exception(
+          start_time,
+          kind,
+          reason,
+          __STACKTRACE__,
+          stratum_count
+        )
+
+        :erlang.raise(kind, reason, __STACKTRACE__)
     end
   end
 
-  defp do_evaluate(%IR{} = ir, opts) do
+  defp do_evaluate_inner(ir, opts, start_time, stratum_count) do
     storage_mod = Keyword.get(opts, :storage, ExDatalog.Storage.Map)
     max_iterations = Keyword.get(opts, :max_iterations, @default_max_iterations)
     timeout_ms = Keyword.get(opts, :timeout_ms, @default_timeout_ms)
     explain = Keyword.get(opts, :explain, false)
-
-    start_time = System.monotonic_time(:microsecond)
 
     schemas =
       ir.relations
@@ -146,6 +167,8 @@ defmodule ExDatalog.Engine.Naive do
       },
       provenance: provenance
     }
+
+    ExDatalog.Telemetry.emit_stop(start_time, total_iterations, relation_sizes, stratum_count)
 
     {:ok, result}
   end
