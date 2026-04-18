@@ -121,7 +121,7 @@ defmodule ExDatalog.PropertyTest do
   property "strata assignment gives stratum 0 to EDB-only relations" do
     check all(
             names <-
-              StreamData.list_of(
+              StreamData.uniq_list_of(
                 StreamData.string(:alphanumeric, min_length: 1, max_length: 5),
                 min_length: 2,
                 max_length: 5
@@ -129,8 +129,7 @@ defmodule ExDatalog.PropertyTest do
           ) do
       alias ExDatalog.Validator.Stratification
 
-      unique = Enum.uniq(names)
-      [edb_name, idb_name | _] = unique
+      [edb_name, idb_name | _] = names
 
       program =
         Program.new()
