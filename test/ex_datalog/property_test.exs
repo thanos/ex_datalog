@@ -166,4 +166,58 @@ defmodule ExDatalog.PropertyTest do
                })
     end
   end
+
+  @tag :property
+  property "strata assignment ensures positive edges stay within or below and negative edges go strictly below" do
+    alias ExDatalog.Validator.Stratification
+
+    check all(
+            edb_count <- StreamData.integer(1..4),
+            idb_count <- StreamData.integer(1..4),
+            names <-
+              StreamData.uniq_list_of(
+                StreamData.string(:alphanumeric, min_length: 1, max_length: 5),
+                min_length: edb_count + idb_count,
+                max_length: edb_count + idb_count
+              )
+          ) do
+      {edb_names, idb_names} = Enum.split(names, edb_count)
+
+      program =
+        Enum.reduce(names, Program.new(), fn name, acc ->
+          Program.add_relation(acc, name, [:atom, :atom])
+        end)
+
+      program =
+        Enum.reduce(idb_names, program, fn name, acc ->
+          body_rel = Enum.random(edb_names ++ idb_names)
+
+          Program.add_rule(
+            acc,
+            Rule.new(
+              Atom.new(name, [Term.var("X"), Term.var("Y")]),
+              [{:positive, Atom.new(body_rel, [Term.var("X"), Term.var("Y")])}]
+            )
+          )
+        end)
+
+      strata = Stratification.assign_strata(program)
+
+      for rule <- program.rules,
+          {polarity, body_atom} <- rule.body do
+        head_stratum = strata[rule.head.relation] || 0
+        body_stratum = strata[body_atom.relation] || 0
+
+        case polarity do
+          :positive ->
+            assert head_stratum >= body_stratum,
+                   "positive edge from #{body_atom.relation} (stratum #{body_stratum}) to #{rule.head.relation} (stratum #{head_stratum}) violates stratification"
+
+          :negative ->
+            assert head_stratum > body_stratum,
+                   "negative edge from #{body_atom.relation} (stratum #{body_stratum}) to #{rule.head.relation} (stratum #{head_stratum}) violates stratification"
+        end
+      end
+    end
+  end
 end

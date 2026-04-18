@@ -31,7 +31,11 @@ defmodule ExDatalog.Constraint do
   | `add/3` | result = left + right |
   | `sub/3` | result = left - right |
   | `mul/3` | result = left * right |
-  | `div/3` | result = left / right |
+  | `div/3` | result = div(left, right) (integer division) |
+
+  All arithmetic is **integer-only**. The `:div` operator uses Elixir's
+  `Kernel.div/2` (truncating integer division). Division by zero returns
+  `:div_by_zero` and filters the binding.
 
   ## Examples
 
@@ -182,7 +186,10 @@ defmodule ExDatalog.Constraint do
   def mul(left, right, result), do: arithmetic(:mul, left, right, result)
 
   @doc """
-  Constructs a division constraint: `result = left / right`.
+  Constructs an integer division constraint: `result = div(left, right)`.
+
+  Uses truncating integer division (`Kernel.div/2`). Division by zero
+  filters the binding (returns `:div_by_zero`).
 
   ## Examples
 

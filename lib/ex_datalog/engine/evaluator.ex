@@ -78,7 +78,8 @@ defmodule ExDatalog.Engine.Evaluator do
     existing = Map.get(full, head_relation, MapSet.new())
 
     if k == 0 do
-      eval_fact_rule(rule, full)
+      derived = eval_fact_rule(rule, full)
+      derived |> MapSet.new() |> MapSet.difference(existing) |> MapSet.to_list()
     else
       0..(k - 1)
       |> Enum.flat_map(&eval_variant_if_delta(rule, positive_body, full, delta, old, &1))
