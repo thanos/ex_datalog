@@ -2,7 +2,7 @@ defmodule ExDatalog.ProgramTest do
   use ExUnit.Case, async: true
   doctest ExDatalog.Program
 
-  alias ExDatalog.{Program, Rule, Atom, Term}
+  alias ExDatalog.{Atom, Program, Rule, Term}
 
   defp base_program do
     Program.new()
@@ -73,16 +73,18 @@ defmodule ExDatalog.ProgramTest do
       assert program.facts == [{"parent", [:alice, :bob]}]
     end
 
-    test "multiple facts accumulate in insertion order" do
+    test "multiple facts accumulate; builder stores newest-first" do
       program =
         base_program()
         |> Program.add_fact("parent", [:alice, :bob])
         |> Program.add_fact("parent", [:bob, :carol])
 
-      assert program.facts == [
-               {"parent", [:alice, :bob]},
-               {"parent", [:bob, :carol]}
-             ]
+      # The builder prepends for O(1) per-call cost; the struct stores
+      # facts newest-first. validate/1 does NOT reorder the struct —
+      # normalization happens inside the compiler.
+      assert length(program.facts) == 2
+      assert {"parent", [:alice, :bob]} in program.facts
+      assert {"parent", [:bob, :carol]} in program.facts
     end
 
     test "facts for different relations can coexist" do
@@ -121,6 +123,18 @@ defmodule ExDatalog.ProgramTest do
       program = Program.new() |> Program.add_relation("label", [:string])
       program = Program.add_fact(program, "label", ["hello"])
       assert program.facts == [{"label", ["hello"]}]
+    end
+
+    test "rejects variable term tuples as fact values" do
+      program = Program.new() |> Program.add_relation("edge", [:atom, :atom])
+      assert {:error, msg} = Program.add_fact(program, "edge", [{:var, "X"}, {:var, "Y"}])
+      assert msg =~ "unsupported fact value"
+    end
+
+    test "rejects float fact values" do
+      program = Program.new() |> Program.add_relation("price", [:atom, :integer])
+      assert {:error, msg} = Program.add_fact(program, "price", [:item, 9.99])
+      assert msg =~ "float"
     end
   end
 
@@ -264,6 +278,72 @@ defmodule ExDatalog.ProgramTest do
       assert map_size(program.relations) == 2
       assert length(program.facts) == 2
       assert length(program.rules) == 1
+    end
+
+    test "add_relation error propagates through add_fact pipeline" do
+      result =
+        Program.new()
+        |> Program.add_relation("", [:atom])
+        |> Program.add_fact("parent", [:alice, :bob])
+
+      assert {:error, msg} = result
+      assert msg =~ "non-empty string"
+    end
+
+    test "add_relation error propagates through add_rule pipeline" do
+      result =
+        Program.new()
+        |> Program.add_relation("", [:atom])
+        |> Program.add_rule(parent_rule())
+
+      assert {:error, msg} = result
+      assert msg =~ "non-empty string"
+    end
+
+    test "add_fact error propagates through add_rule pipeline" do
+      result =
+        Program.new()
+        |> Program.add_relation("parent", [:atom, :atom])
+        |> Program.add_fact("unknown", [:alice])
+        |> Program.add_rule(parent_rule())
+
+      assert {:error, msg} = result
+      assert msg =~ "not defined"
+    end
+
+    test "add_relation duplicate error propagates through full pipeline" do
+      result =
+        Program.new()
+        |> Program.add_relation("parent", [:atom, :atom])
+        |> Program.add_relation("parent", [:atom])
+        |> Program.add_fact("parent", [:alice, :bob])
+        |> Program.add_rule(parent_rule())
+
+      assert {:error, msg} = result
+      assert msg =~ "already defined"
+    end
+
+    test "add_fact arity error propagates through add_rule" do
+      result =
+        Program.new()
+        |> Program.add_relation("parent", [:atom, :atom])
+        |> Program.add_relation("ancestor", [:atom, :atom])
+        |> Program.add_fact("parent", [:alice])
+        |> Program.add_rule(parent_rule())
+
+      assert {:error, msg} = result
+      assert msg =~ "arity mismatch"
+    end
+
+    test "add_rule error does not lose original error when piped further" do
+      result =
+        Program.new()
+        |> Program.add_relation("parent", [:atom, :atom])
+        |> Program.add_fact("nonexistent", [:alice])
+        |> Program.add_fact("parent", [:alice, :bob])
+
+      assert {:error, msg} = result
+      assert msg =~ "not defined"
     end
   end
 end

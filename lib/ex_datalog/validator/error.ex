@@ -1,8 +1,8 @@
-defmodule ExDatalog.Validator.Errors do
+defmodule ExDatalog.Validator.Error do
   @moduledoc """
   Structured validation error types for ExDatalog programs.
 
-  Every error is a `%ExDatalog.Validator.Errors{}` struct with:
+  Every error is a `%ExDatalog.Validator.Error{}` struct with:
 
   - `kind` — a machine-readable atom identifying the error category.
   - `context` — a map with error-specific context (relation, variable, rule index, etc.).
@@ -24,8 +24,8 @@ defmodule ExDatalog.Validator.Errors do
 
   ## Examples
 
-      iex> ExDatalog.Validator.Errors.new(:undefined_relation, %{relation: "parent", rule_index: 0}, "rule 0 references undefined relation \\"parent\\"")
-      %ExDatalog.Validator.Errors{
+      iex> ExDatalog.Validator.Error.new(:undefined_relation, %{relation: "parent", rule_index: 0}, "rule 0 references undefined relation \\"parent\\"")
+      %ExDatalog.Validator.Error{
         kind: :undefined_relation,
         context: %{relation: "parent", rule_index: 0},
         message: "rule 0 references undefined relation \\"parent\\""
@@ -43,6 +43,7 @@ defmodule ExDatalog.Validator.Errors do
           | :unstratified_negation
           | :unbound_constraint_variable
           | :invalid_body_literal
+          | :wildcard_in_head
 
   @type t :: %__MODULE__{
           kind: kind(),
@@ -57,8 +58,8 @@ defmodule ExDatalog.Validator.Errors do
 
   ## Examples
 
-      iex> ExDatalog.Validator.Errors.new(:arity_mismatch, %{relation: "parent", expected: 2, got: 1}, "arity mismatch")
-      %ExDatalog.Validator.Errors{
+      iex> ExDatalog.Validator.Error.new(:arity_mismatch, %{relation: "parent", expected: 2, got: 1}, "arity mismatch")
+      %ExDatalog.Validator.Error{
         kind: :arity_mismatch,
         context: %{relation: "parent", expected: 2, got: 1},
         message: "arity mismatch"

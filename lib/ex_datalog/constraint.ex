@@ -31,7 +31,11 @@ defmodule ExDatalog.Constraint do
   | `add/3` | result = left + right |
   | `sub/3` | result = left - right |
   | `mul/3` | result = left * right |
-  | `div/3` | result = left / right |
+  | `div/3` | result = div(left, right) (integer division) |
+
+  All arithmetic is **integer-only**. The `:div` operator uses Elixir's
+  `Kernel.div/2` (truncating integer division). Division by zero returns
+  `:div_by_zero` and filters the binding.
 
   ## Examples
 
@@ -50,12 +54,22 @@ defmodule ExDatalog.Constraint do
   @all_ops @comparison_ops ++ @arithmetic_ops
 
   @type op :: :gt | :lt | :gte | :lte | :eq | :neq | :add | :sub | :mul | :div
-  @type t :: %__MODULE__{
-          op: op(),
+
+  @type comparison :: %__MODULE__{
+          op: :gt | :lt | :gte | :lte | :eq | :neq,
           left: Term.t(),
           right: Term.t(),
-          result: Term.t() | nil
+          result: nil
         }
+
+  @type arithmetic :: %__MODULE__{
+          op: :add | :sub | :mul | :div,
+          left: Term.t(),
+          right: Term.t(),
+          result: {:var, String.t()}
+        }
+
+  @type t :: comparison() | arithmetic()
 
   defstruct [:op, :left, :right, :result]
 
@@ -172,7 +186,10 @@ defmodule ExDatalog.Constraint do
   def mul(left, right, result), do: arithmetic(:mul, left, right, result)
 
   @doc """
-  Constructs a division constraint: `result = left / right`.
+  Constructs an integer division constraint: `result = div(left, right)`.
+
+  Uses truncating integer division (`Kernel.div/2`). Division by zero
+  filters the binding (returns `:div_by_zero`).
 
   ## Examples
 
@@ -267,7 +284,7 @@ defmodule ExDatalog.Constraint do
   """
   @spec result_variable(t()) :: Term.var_name() | nil
   def result_variable(%__MODULE__{result: {:var, name}}), do: name
-  def result_variable(%__MODULE__{result: nil}), do: nil
+  def result_variable(%__MODULE__{result: _}), do: nil
 
   # --- Private helpers ---
 

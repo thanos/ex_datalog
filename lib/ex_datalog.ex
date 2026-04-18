@@ -77,6 +77,10 @@ defmodule ExDatalog do
       iex> ExDatalog.new()
       %ExDatalog.Program{relations: %{}, facts: [], rules: []}
 
+      iex> alias ExDatalog.Program
+      iex> ExDatalog.new() |> Program.add_relation("edge", [:atom, :atom])
+      %ExDatalog.Program{relations: %{"edge" => %{arity: 2, types: [:atom, :atom]}}, facts: [], rules: []}
+
   """
   @spec new() :: Program.t()
   defdelegate new(), to: Program
@@ -85,15 +89,16 @@ defmodule ExDatalog do
   Validates a program, returning structural and semantic errors.
 
   Returns `{:ok, program}` if valid, `{:error, errors}` otherwise.
-  `errors` is a list of `ExDatalog.Validator.Errors.t()`.
+  `errors` is a list of `ExDatalog.Validator.Error.t()`.
 
   Structural checks (Phase 1):
   - Relation references exist.
   - Arities match declared schemas.
   - Terms are valid.
 
-  Semantic checks (Phase 2, not yet available):
+  Semantic checks (Phase 2):
   - Variable safety and range restriction.
+  - Constraint binding and ordering.
   - Stratified negation.
 
   ## Examples
@@ -105,7 +110,7 @@ defmodule ExDatalog do
       true
 
   """
-  @spec validate(Program.t()) :: {:ok, Program.t()} | {:error, list()}
+  @spec validate(Program.t()) :: {:ok, Program.t()} | {:error, [Validator.Error.t()]}
   def validate(%Program{} = program) do
     Validator.validate(program)
   end
@@ -113,15 +118,35 @@ defmodule ExDatalog do
   @doc """
   Compiles a validated program to an engine-neutral IR.
 
-  Runs validation first. Returns `{:ok, ir}` or `{:error, errors}`.
+  Runs validation first. Returns `{:ok, %ExDatalog.IR{}}` or
+  `{:error, errors}`.
 
-  Available in Phase 3.
+  The IR is deterministic: the same program always produces the same IR.
+  Rules are sorted by `(stratum, relation_name, rule_id)`. Facts are sorted
+  by `(relation_name, values)`. Relations are sorted by name.
+
+  ## Examples
+
+      iex> alias ExDatalog.{Program, Rule, Atom, Term}
+      iex> program =
+      ...>   Program.new()
+      ...>   |> Program.add_relation("edge", [:atom, :atom])
+      ...>   |> Program.add_relation("path", [:atom, :atom])
+      ...>   |> Program.add_rule(
+      ...>     Rule.new(
+      ...>       Atom.new("path", [Term.var("X"), Term.var("Y")]),
+      ...>       [{:positive, Atom.new("edge", [Term.var("X"), Term.var("Y")])}]
+      ...>     )
+      ...>   )
+      iex> {:ok, ir} = ExDatalog.compile(program)
+      iex> length(ir.rules) == 1 and length(ir.relations) == 2
+      true
+      true
+
   """
-  @spec compile(Program.t()) :: {:ok, term()} | {:error, list()}
+  @spec compile(Program.t()) :: {:ok, ExDatalog.IR.t()} | {:error, [Validator.Error.t()]}
   def compile(%Program{} = program) do
-    with {:ok, validated} <- validate(program) do
-      ExDatalog.Compiler.compile(validated)
-    end
+    ExDatalog.Compiler.compile(program)
   end
 
   @doc """
@@ -129,10 +154,15 @@ defmodule ExDatalog do
 
   Returns `{:ok, ExDatalog.Result.t()}` or `{:error, reason}`.
 
-  Available in Phase 4.
+  ## Options
+
+  - `:engine` — backend module (default: `ExDatalog.Engine.Naive`)
+  - `:storage` — storage module (default: `ExDatalog.Storage.Map`)
+  - `:max_iterations` — fixpoint iteration limit (default: 10_000)
+  - `:timeout_ms` — wall-clock timeout in ms (default: 30_000)
   """
-  @spec evaluate(term(), keyword()) :: {:ok, term()} | {:error, term()}
-  def evaluate(ir, opts \\ []) do
+  @spec evaluate(ExDatalog.IR.t(), keyword()) :: {:ok, ExDatalog.Result.t()} | {:error, term()}
+  def evaluate(%ExDatalog.IR{} = ir, opts \\ []) do
     engine = Keyword.get(opts, :engine, ExDatalog.Engine.Naive)
     engine.evaluate(ir, opts)
   end
@@ -144,13 +174,24 @@ defmodule ExDatalog do
 
   Returns `{:ok, ExDatalog.Result.t()}` or `{:error, reason}`.
 
-  Available end-to-end in Phase 4. Validation is available in Phase 1.
-
   ## Options
 
-  See module documentation for available options.
+  See `evaluate/2` for available options.
+
+  ## Examples
+
+      iex> alias ExDatalog.{Program, Rule, Atom, Term}
+      iex> program =
+      ...>   Program.new()
+      ...>   |> Program.add_relation("parent", [:atom, :atom])
+      ...>   |> Program.add_fact("parent", [:alice, :bob])
+      iex> {:ok, result} = ExDatalog.query(program)
+      iex> ExDatalog.Result.size(result, "parent")
+      1
+
   """
-  @spec query(Program.t(), keyword()) :: {:ok, term()} | {:error, term()}
+  @spec query(Program.t(), keyword()) ::
+          {:ok, ExDatalog.Result.t()} | {:error, [Validator.Error.t()] | term()}
   def query(%Program{} = program, opts \\ []) do
     with {:ok, validated} <- validate(program),
          {:ok, ir} <- ExDatalog.Compiler.compile(validated) do

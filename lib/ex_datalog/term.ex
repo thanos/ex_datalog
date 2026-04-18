@@ -46,7 +46,14 @@ defmodule ExDatalog.Term do
   @doc """
   Constructs a constant term.
 
-  Accepts integers, strings, and atoms.
+  Accepts integers, strings, and atoms. Floats are not supported — Datalog
+  relations use discrete values. If you pass a float, `const/1` raises
+  `ArgumentError`.
+
+  Note that `true`, `false`, and `nil` are valid Elixir atoms and are
+  accepted as constants, producing `{:const, true}`, `{:const, false}`,
+  and `{:const, nil}` respectively. Use these with care — `nil` in
+  particular may be confused with an absent value downstream.
 
   ## Examples
 
@@ -63,6 +70,12 @@ defmodule ExDatalog.Term do
   @spec const(value()) :: {:const, value()}
   def const(value) when is_integer(value) or is_binary(value) or is_atom(value),
     do: {:const, value}
+
+  def const(value) when is_float(value),
+    do: raise(ArgumentError, "float values are not supported: #{inspect(value)}")
+
+  def const(value),
+    do: raise(ArgumentError, "unsupported constant value: #{inspect(value)}")
 
   @doc """
   Constructs an anonymous wildcard term.

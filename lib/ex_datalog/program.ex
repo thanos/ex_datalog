@@ -8,10 +8,45 @@ defmodule ExDatalog.Program do
   - **Facts** — ground tuples asserted as true for a given relation.
   - **Rules** — inference rules that derive new facts from existing ones.
 
+  Relation names are string keys stored in a map. They do not collide with
+  internal atoms like `:positive`, `:negative`, `:wildcard`, or `:constraint`
+  because those atoms appear in tuple positions (`{:positive, atom}`),
+  not as map keys.
+
   Programs are built using a pipeline of builder functions. Structural
-  validation (arity checking, relation existence) is done at build time.
-  Semantic validation (variable safety, stratification) is done by
-  `ExDatalog.Validator`.
+  validation (arity checking, relation existence) is done at build time by
+  `add_relation/3`, `add_fact/3`, and `add_rule/2`. On failure these return
+  `{:error, String.t()}` with a human-readable message.
+
+  ## Error propagation in pipelines
+
+  Because builder functions return `t() | {:error, String.t()}`, a failed
+  step will short-circuit the rest of the pipeline: the `{:error, _}` tuple
+  passes through unchanged. This means you can pipe freely and check for
+  errors at the end:
+
+      {:ok, result} =
+        Program.new()
+        |> Program.add_relation("edge", [:atom, :atom])
+        |> Program.add_relation("path", [:atom, :atom])
+        |> Program.add_fact("edge", [:a, :b])
+        |> Program.add_rule(...)
+        |> ExDatalog.query()
+
+  If `add_relation/3` fails, the `{:error, msg}` tuple flows through
+  `add_fact/3` and `add_rule/2` without raising, and `ExDatalog.query/1`
+  will detect the error struct and return `{:error, [msg]}`.
+
+  Semantic validation (variable safety, stratification, constraint binding)
+  is done separately by `ExDatalog.Validator.validate/1`, which returns
+  `{:error, [ExDatalog.Validator.Error.t()]}` with structured error structs.
+
+  **Note:** builder methods perform a subset of the same checks as the
+  validator (relation existence, arity). This is intentional: the builder
+  provides early feedback for interactive construction, while the validator
+  is the canonical source of truth and catches issues the builder cannot
+  (e.g., programs assembled by directly modifying the struct, which bypasses
+  builder validation).
 
   ## Example
 
@@ -94,7 +129,7 @@ defmodule ExDatalog.Program do
   end
 
   def add_relation(%__MODULE__{} = _program, _name, types)
-      when not is_list(types) or length(types) == 0 do
+      when not is_list(types) or types == [] do
     {:error, "types must be a non-empty list"}
   end
 
@@ -107,6 +142,8 @@ defmodule ExDatalog.Program do
     end
   end
 
+  def add_relation({:error, _} = err, _name, _types), do: err
+
   @doc """
   Adds a ground fact to the program.
 
@@ -117,6 +154,7 @@ defmodule ExDatalog.Program do
 
   - The relation is not defined.
   - The arity of `values` does not match the relation schema.
+  - A value in `values` is not an integer, string, or atom (floats are not supported).
 
   ## Examples
 
@@ -138,19 +176,25 @@ defmodule ExDatalog.Program do
   @spec add_fact(t(), relation_name(), fact_values()) :: t() | {:error, String.t()}
   def add_fact(%__MODULE__{relations: rels} = program, relation, values)
       when is_binary(relation) and is_list(values) do
-    case Map.fetch(rels, relation) do
-      :error ->
-        {:error, "relation #{inspect(relation)} is not defined"}
-
-      {:ok, %{arity: arity}} when length(values) != arity ->
+    with :ok <- validate_fact_values(values),
+         {:ok, %{arity: arity}} <- Map.fetch(rels, relation) do
+      if length(values) != arity do
         {:error,
          "arity mismatch for relation #{inspect(relation)}: " <>
            "expected #{arity} values, got #{length(values)}"}
+      else
+        %__MODULE__{program | facts: [{relation, values} | program.facts]}
+      end
+    else
+      :error ->
+        {:error, "relation #{inspect(relation)} is not defined"}
 
-      {:ok, _} ->
-        %__MODULE__{program | facts: program.facts ++ [{relation, values}]}
+      {:error, _} = err ->
+        err
     end
   end
+
+  def add_fact({:error, _} = err, _relation, _values), do: err
 
   @doc """
   Adds a rule to the program.
@@ -186,9 +230,11 @@ defmodule ExDatalog.Program do
   def add_rule(%__MODULE__{} = program, %Rule{} = rule) do
     with :ok <- validate_atom(program, rule.head),
          :ok <- validate_body(program, rule.body) do
-      %__MODULE__{program | rules: program.rules ++ [rule]}
+      %__MODULE__{program | rules: [rule | program.rules]}
     end
   end
+
+  def add_rule({:error, _} = err, %Rule{}), do: err
 
   @doc """
   Returns the schema for a relation, or `nil` if not defined.
@@ -228,21 +274,38 @@ defmodule ExDatalog.Program do
 
   # --- Private helpers ---
 
-  defp validate_atom(%__MODULE__{relations: rels}, %Atom{relation: rel, terms: terms}) do
-    case Map.fetch(rels, rel) do
-      :error ->
-        {:error, "atom references undefined relation #{inspect(rel)}"}
+  defp validate_atom(program, atom) do
+    with :ok <- validate_atom_relation(atom, program),
+         :ok <- validate_atom_arity(atom, program),
+         :ok <- validate_atom_terms(atom) do
+      :ok
+    end
+  end
 
+  defp validate_atom_relation(%Atom{relation: rel}, %__MODULE__{relations: rels}) do
+    if Map.has_key?(rels, rel) do
+      :ok
+    else
+      {:error, "atom references undefined relation #{inspect(rel)}"}
+    end
+  end
+
+  defp validate_atom_arity(%Atom{relation: rel, terms: terms}, %__MODULE__{relations: rels}) do
+    case Map.fetch(rels, rel) do
       {:ok, %{arity: arity}} when length(terms) != arity ->
         {:error,
          "arity mismatch for relation #{inspect(rel)}: " <>
            "expected #{arity} terms, got #{length(terms)}"}
 
-      {:ok, _} ->
-        case Enum.find(terms, fn t -> not Term.valid?(t) end) do
-          nil -> :ok
-          bad -> {:error, "invalid term #{inspect(bad)} in atom for relation #{inspect(rel)}"}
-        end
+      _ ->
+        :ok
+    end
+  end
+
+  defp validate_atom_terms(%Atom{relation: rel, terms: terms}) do
+    case Enum.find(terms, fn t -> not Term.valid?(t) end) do
+      nil -> :ok
+      bad -> {:error, "invalid term #{inspect(bad)} in atom for relation #{inspect(rel)}"}
     end
   end
 
@@ -262,4 +325,17 @@ defmodule ExDatalog.Program do
       end
     end)
   end
+
+  defp validate_fact_values(values) do
+    case Enum.find(values, fn v -> not valid_fact_value?(v) end) do
+      nil -> :ok
+      v when is_float(v) -> {:error, "float values are not supported: #{inspect(v)}"}
+      v -> {:error, "unsupported fact value: #{inspect(v)} (expected integer, string, or atom)"}
+    end
+  end
+
+  defp valid_fact_value?(v) when is_integer(v), do: true
+  defp valid_fact_value?(v) when is_binary(v), do: true
+  defp valid_fact_value?(v) when is_atom(v), do: true
+  defp valid_fact_value?(_), do: false
 end

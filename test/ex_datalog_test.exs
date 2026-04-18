@@ -2,7 +2,7 @@ defmodule ExDatalogTest do
   use ExUnit.Case, async: true
   doctest ExDatalog
 
-  alias ExDatalog.{Program, Rule, Atom, Term}
+  alias ExDatalog.{Atom, Program, Rule, Term}
 
   describe "new/0" do
     test "delegates to Program.new/0" do
@@ -35,7 +35,7 @@ defmodule ExDatalogTest do
       }
 
       assert {:error, errors} = ExDatalog.validate(program)
-      assert length(errors) > 0
+      assert errors != []
       assert Enum.any?(errors, &(&1.kind == :undefined_relation))
     end
   end
