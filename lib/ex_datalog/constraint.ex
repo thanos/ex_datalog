@@ -277,7 +277,7 @@ defmodule ExDatalog.Constraint do
   """
   @spec result_variable(t()) :: Term.var_name() | nil
   def result_variable(%__MODULE__{result: {:var, name}}), do: name
-  def result_variable(%__MODULE__{result: nil}), do: nil
+  def result_variable(%__MODULE__{result: _}), do: nil
 
   # --- Private helpers ---
 

@@ -149,6 +149,7 @@ defmodule ExDatalog.Program do
 
   - The relation is not defined.
   - The arity of `values` does not match the relation schema.
+  - A value in `values` is not an integer, string, or atom (floats are not supported).
 
   ## Examples
 
@@ -170,17 +171,21 @@ defmodule ExDatalog.Program do
   @spec add_fact(t(), relation_name(), fact_values()) :: t() | {:error, String.t()}
   def add_fact(%__MODULE__{relations: rels} = program, relation, values)
       when is_binary(relation) and is_list(values) do
-    case Map.fetch(rels, relation) do
-      :error ->
-        {:error, "relation #{inspect(relation)} is not defined"}
-
-      {:ok, %{arity: arity}} when length(values) != arity ->
+    with :ok <- validate_fact_values(values),
+         {:ok, %{arity: arity}} <- Map.fetch(rels, relation) do
+      if length(values) != arity do
         {:error,
          "arity mismatch for relation #{inspect(relation)}: " <>
            "expected #{arity} values, got #{length(values)}"}
-
-      {:ok, _} ->
+      else
         %__MODULE__{program | facts: [{relation, values} | program.facts]}
+      end
+    else
+      :error ->
+        {:error, "relation #{inspect(relation)} is not defined"}
+
+      {:error, _} = err ->
+        err
     end
   end
 
@@ -315,4 +320,17 @@ defmodule ExDatalog.Program do
       end
     end)
   end
+
+  defp validate_fact_values(values) do
+    case Enum.find(values, fn v -> not valid_fact_value?(v) end) do
+      nil -> :ok
+      v when is_float(v) -> {:error, "float values are not supported: #{inspect(v)}"}
+      v -> {:error, "unsupported fact value: #{inspect(v)} (expected integer, string, or atom)"}
+    end
+  end
+
+  defp valid_fact_value?(v) when is_integer(v), do: true
+  defp valid_fact_value?(v) when is_binary(v), do: true
+  defp valid_fact_value?(v) when is_atom(v), do: true
+  defp valid_fact_value?(_), do: false
 end

@@ -36,11 +36,11 @@ defmodule ExDatalog.TermTest do
     end
 
     test "raises on float" do
-      assert_raise FunctionClauseError, fn -> Term.const(1.5) end
+      assert_raise ArgumentError, fn -> Term.const(1.5) end
     end
 
     test "raises on list" do
-      assert_raise FunctionClauseError, fn -> Term.const([1, 2]) end
+      assert_raise ArgumentError, fn -> Term.const([1, 2]) end
     end
   end
 
