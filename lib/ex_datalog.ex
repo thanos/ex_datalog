@@ -77,6 +77,10 @@ defmodule ExDatalog do
       iex> ExDatalog.new()
       %ExDatalog.Program{relations: %{}, facts: [], rules: []}
 
+      iex> alias ExDatalog.Program
+      iex> ExDatalog.new() |> Program.add_relation("edge", [:atom, :atom])
+      %ExDatalog.Program{relations: %{"edge" => %{arity: 2, types: [:atom, :atom]}}, facts: [], rules: []}
+
   """
   @spec new() :: Program.t()
   defdelegate new(), to: Program

@@ -113,12 +113,7 @@ defmodule ExDatalog.Engine.Evaluator do
   end
 
   defp positive_atoms(%IR.Rule{body: body}) do
-    body
-    |> Enum.filter(fn
-      {:positive, %IR.Atom{}} -> true
-      _ -> false
-    end)
-    |> Enum.map(fn {:positive, atom} -> atom end)
+    for {:positive, %IR.Atom{} = atom} <- body, do: atom
   end
 
   defp eval_fact_rule(rule, full) do

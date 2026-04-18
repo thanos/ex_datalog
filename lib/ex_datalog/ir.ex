@@ -169,13 +169,13 @@ defmodule ExDatalog.IR do
         body:
           Enum.map(body, fn
             {:positive, atom} ->
-              %{polarity: :positive, atom: Atom.serialize(atom)}
+              %{kind: :positive, atom: Atom.serialize(atom)}
 
             {:negative, atom} ->
-              %{polarity: :negative, atom: Atom.serialize(atom)}
+              %{kind: :negative, atom: Atom.serialize(atom)}
 
             {:constraint, c} ->
-              %{polarity: :constraint, constraint: Constraint.serialize(c)}
+              %{kind: :constraint, constraint: Constraint.serialize(c)}
           end),
         stratum: stratum,
         metadata: metadata
