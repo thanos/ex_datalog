@@ -1,6 +1,6 @@
 # ExDatalog
 
-**TODO: Add description**
+A pure Elixir Datalog engine with semi-naive fixpoint evaluation, stratified negation, provenance tracking, and telemetry.
 
 ## Installation
 
