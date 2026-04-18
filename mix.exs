@@ -8,7 +8,7 @@ defmodule ExDatalog.MixProject do
     [
       app: :ex_datalog,
       version: @version,
-      elixir: "~> 1.18",
+      elixir: "~> 1.17",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
