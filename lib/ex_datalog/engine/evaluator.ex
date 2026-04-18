@@ -80,16 +80,11 @@ defmodule ExDatalog.Engine.Evaluator do
     if k == 0 do
       eval_fact_rule(rule, full)
     else
-      derived =
-        0..(k - 1)
-        |> Enum.flat_map(fn delta_pos ->
-          eval_variant(rule, positive_body, full, delta, old, delta_pos)
-        end)
-        |> MapSet.new()
-        |> MapSet.difference(existing)
-        |> MapSet.to_list()
-
-      derived
+      0..(k - 1)
+      |> Enum.flat_map(&eval_variant_if_delta(rule, positive_body, full, delta, old, &1))
+      |> MapSet.new()
+      |> MapSet.difference(existing)
+      |> MapSet.to_list()
     end
   end
 
@@ -186,6 +181,16 @@ defmodule ExDatalog.Engine.Evaluator do
     case bindings do
       [] -> []
       _ -> Enum.map(bindings, &Join.project(rule.head, &1))
+    end
+  end
+
+  defp eval_variant_if_delta(rule, positive_body, full, delta, old, delta_pos) do
+    delta_relation = Enum.at(positive_body, delta_pos).relation
+
+    if MapSet.size(Map.get(delta, delta_relation, MapSet.new())) == 0 do
+      []
+    else
+      eval_variant(rule, positive_body, full, delta, old, delta_pos)
     end
   end
 
