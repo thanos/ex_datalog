@@ -155,42 +155,39 @@ defmodule ExDatalog.Validator do
   end
 
   defp check_atom(errors, %Atom{relation: rel, terms: terms}, rels, context) do
-    errors
-    |> check_atom_relation(rel, rels, context)
-    |> check_atom_arity(rel, terms, rels, context)
-    |> check_atom_terms(rel, terms, context)
-  end
-
-  defp check_atom_relation(errors, relation, rels, context) do
-    if Map.has_key?(rels, relation) do
-      errors
-    else
-      [
-        Error.new(
-          :undefined_relation,
-          Map.put(context, :relation, relation),
-          "#{location(context)} references undefined relation #{inspect(relation)}"
-        )
-        | errors
-      ]
-    end
-  end
-
-  defp check_atom_arity(errors, relation, terms, rels, context) do
-    case Map.fetch(rels, relation) do
-      {:ok, %{arity: arity}} when length(terms) != arity ->
+    case Map.fetch(rels, rel) do
+      :error ->
         [
           Error.new(
-            :arity_mismatch,
-            Map.merge(context, %{relation: relation, expected: arity, got: length(terms)}),
-            "#{location(context)} relation #{inspect(relation)}: " <>
-              "expected #{arity} terms, got #{length(terms)}"
+            :undefined_relation,
+            Map.put(context, :relation, rel),
+            "#{location(context)} references undefined relation #{inspect(rel)}"
           )
           | errors
         ]
 
-      _ ->
+      {:ok, schema} ->
         errors
+        |> check_atom_arity(rel, terms, schema, context)
+        |> check_atom_terms(rel, terms, context)
+    end
+  end
+
+  defp check_atom_arity(errors, relation, terms, schema, context) do
+    %{arity: arity} = schema
+
+    if length(terms) != arity do
+      [
+        Error.new(
+          :arity_mismatch,
+          Map.merge(context, %{relation: relation, expected: arity, got: length(terms)}),
+          "#{location(context)} relation #{inspect(relation)}: " <>
+            "expected #{arity} terms, got #{length(terms)}"
+        )
+        | errors
+      ]
+    else
+      errors
     end
   end
 
