@@ -270,4 +270,33 @@ defmodule ExDatalog.ValidatorTest do
              "Expected :unstratified_negation error, got: #{inspect(kinds)}"
     end
   end
+
+  describe "validate/1 idempotency" do
+    test "validate returns the program struct unchanged" do
+      program =
+        Program.new()
+        |> Program.add_relation("parent", [:atom, :atom])
+        |> Program.add_relation("ancestor", [:atom, :atom])
+        |> Program.add_fact("parent", [:alice, :bob])
+        |> Program.add_fact("parent", [:bob, :carol])
+
+      {:ok, validated} = ExDatalog.validate(program)
+
+      assert validated == program
+    end
+
+    test "validate is idempotent: calling twice returns the same program" do
+      program =
+        Program.new()
+        |> Program.add_relation("parent", [:atom, :atom])
+        |> Program.add_fact("parent", [:alice, :bob])
+        |> Program.add_fact("parent", [:bob, :carol])
+
+      {:ok, first} = ExDatalog.validate(program)
+      {:ok, second} = ExDatalog.validate(first)
+
+      assert first == second
+      assert first.facts == program.facts
+    end
+  end
 end

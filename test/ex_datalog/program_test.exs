@@ -73,25 +73,18 @@ defmodule ExDatalog.ProgramTest do
       assert program.facts == [{"parent", [:alice, :bob]}]
     end
 
-    test "multiple facts accumulate; order is normalized by validate/1" do
+    test "multiple facts accumulate; builder stores newest-first" do
       program =
         base_program()
         |> Program.add_fact("parent", [:alice, :bob])
         |> Program.add_fact("parent", [:bob, :carol])
 
-      # The builder prepends for O(1) per-call cost; validate/1 reverses once
-      # to restore insertion order. Between builder calls the struct stores
-      # facts newest-first.
+      # The builder prepends for O(1) per-call cost; the struct stores
+      # facts newest-first. validate/1 does NOT reorder the struct —
+      # normalization happens inside the compiler.
       assert length(program.facts) == 2
       assert {"parent", [:alice, :bob]} in program.facts
       assert {"parent", [:bob, :carol]} in program.facts
-
-      {:ok, validated} = ExDatalog.validate(program)
-
-      assert validated.facts == [
-               {"parent", [:alice, :bob]},
-               {"parent", [:bob, :carol]}
-             ]
     end
 
     test "facts for different relations can coexist" do

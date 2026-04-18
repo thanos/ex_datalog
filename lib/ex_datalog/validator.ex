@@ -34,20 +34,29 @@ defmodule ExDatalog.Validator do
 
   Returns `{:ok, program}` on success, or `{:error, [%Error{}]}` with all
   accumulated errors on failure.
+
+  The returned program is the **same struct** that was passed in — list order
+  of `facts` and `rules` is not modified. The builder API prepends for O(1)
+  per-call cost, so `facts` and `rules` are in reverse insertion order (newest
+  first). This is normalized internally during compilation.
+
+  Calling `validate/1` is idempotent: `program == elem(validate(program), 1)`.
   """
   @spec validate(Program.t()) :: {:ok, Program.t()} | {:error, [Error.t()]}
   def validate(%Program{} = program) do
-    # Normalize insertion order: the builder prepends facts and rules for O(1)
-    # per-call cost; we reverse once here so validation and the returned program
-    # both see facts/rules in the order they were added.
-    program = %{program | facts: Enum.reverse(program.facts), rules: Enum.reverse(program.rules)}
+    # Normalize insertion order for validation checks: the builder prepends
+    # facts and rules for O(1) per-call cost, so we reverse once to get
+    # insertion order. We do NOT return the reversed struct — the original
+    # program is returned unchanged so that validate/1 is referentially
+    # transparent: program == elem(validate(program), 1).
+    normalized = %{program | facts: Enum.reverse(program.facts), rules: Enum.reverse(program.rules)}
 
     errors =
       []
-      |> check_facts(program)
-      |> check_rules(program)
-      |> check_safety(program)
-      |> check_stratification(program)
+      |> check_facts(normalized)
+      |> check_rules(normalized)
+      |> check_safety(normalized)
+      |> check_stratification(normalized)
 
     case errors do
       [] -> {:ok, program}

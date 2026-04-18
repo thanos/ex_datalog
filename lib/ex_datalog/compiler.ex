@@ -61,6 +61,15 @@ defmodule ExDatalog.Compiler do
   end
 
   defp do_compile(program) do
+    # The builder stores facts/rules in prepend order (newest first) for O(1)
+    # per-call cost. Normalize to insertion order (oldest first) so that
+    # with_index assigns deterministic rule IDs (rule 0 = first rule added).
+    program = %{
+      program
+      | facts: Enum.reverse(program.facts),
+        rules: Enum.reverse(program.rules)
+    }
+
     rule_strata = Stratifier.assign(program)
     strata = Stratifier.compute_strata(program)
 
