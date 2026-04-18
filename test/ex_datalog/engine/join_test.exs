@@ -1,7 +1,7 @@
 defmodule ExDatalog.Engine.JoinTest do
   use ExUnit.Case, async: true
 
-  alias ExDatalog.Engine.{Binding, Join}
+  alias ExDatalog.Engine.Join
 
   describe "match_tuple/3" do
     test "matches variables and extends binding" do

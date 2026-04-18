@@ -6,6 +6,16 @@ defmodule ExDatalog.Engine.Naive do
   iterates until no new facts are derived (fixpoint), using the k-position
   delta algorithm to avoid redundant derivations.
 
+  ## Negation
+
+  Rules with negative body atoms must be stratified: every relation that appears
+  under negation must belong to a strictly lower stratum than the rule's head
+  relation. The engine validates this invariant before evaluation and returns
+  `{:error, reason}` for unstratifiable programs.
+
+  Negative atoms are evaluated against the fully-materialised `full` relation
+  snapshot, ensuring correctness under stratified evaluation.
+
   ## Algorithm
 
   For each stratum:
@@ -44,8 +54,18 @@ defmodule ExDatalog.Engine.Naive do
   def name, do: "naive"
 
   @impl ExDatalog.Engine
-  @spec evaluate(IR.t(), keyword()) :: {:ok, Result.t()}
+  @spec evaluate(IR.t(), keyword()) :: {:ok, Result.t()} | {:error, term()}
   def evaluate(%IR{} = ir, opts \\ []) do
+    case validate_stratification(ir) do
+      {:error, _} = err ->
+        err
+
+      :ok ->
+        do_evaluate(ir, opts)
+    end
+  end
+
+  defp do_evaluate(%IR{} = ir, opts) do
     storage_mod = Keyword.get(opts, :storage, ExDatalog.Storage.Map)
     max_iterations = Keyword.get(opts, :max_iterations, @default_max_iterations)
     timeout_ms = Keyword.get(opts, :timeout_ms, @default_timeout_ms)
@@ -91,6 +111,55 @@ defmodule ExDatalog.Engine.Naive do
     }
 
     {:ok, result}
+  end
+
+  defp validate_stratification(%IR{} = ir) do
+    relation_strata =
+      ir.strata
+      |> Enum.flat_map(fn %IR.Stratum{index: idx, relations: rels} ->
+        Enum.map(rels, fn rel -> {rel, idx} end)
+      end)
+      |> Map.new()
+
+    fact_relations = ir.facts |> Enum.map(& &1.relation) |> Enum.uniq()
+
+    relation_strata =
+      Enum.reduce(fact_relations, relation_strata, fn rel, acc ->
+        Map.put_new(acc, rel, 0)
+      end)
+
+    unstratifiable =
+      Enum.filter(ir.rules, fn rule ->
+        Enum.any?(negative_literals(rule), fn {:negative, %IR.Atom{relation: rel}} ->
+          Map.get(relation_strata, rel, 0) >= rule.stratum
+        end)
+      end)
+
+    case unstratifiable do
+      [] ->
+        :ok
+
+      rules ->
+        details = format_unstratifiable_details(rules)
+        {:error, "unstratifiable negation detected: #{details}"}
+    end
+  end
+
+  defp negative_literals(%IR.Rule{body: body}) do
+    Enum.filter(body, fn
+      {:negative, _} -> true
+      _ -> false
+    end)
+  end
+
+  defp format_unstratifiable_details(rules) do
+    rules
+    |> Enum.map_join("; ", fn r ->
+      neg_deps =
+        negative_literals(r) |> Enum.map(fn {:negative, %IR.Atom{relation: rel}} -> rel end)
+
+      "rule #{r.id} (head: #{r.head.relation}) has unstratified negation on: #{Enum.join(neg_deps, ", ")}"
+    end)
   end
 
   defp load_facts(state, facts, storage_mod) do

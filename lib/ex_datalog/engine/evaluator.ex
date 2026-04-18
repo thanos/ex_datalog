@@ -2,11 +2,21 @@ defmodule ExDatalog.Engine.Evaluator do
   @moduledoc """
   Single-rule evaluation using k-position semi-naive delta computation.
 
-  For a rule with k body atoms, each fixpoint iteration evaluates k variants.
-  Variant i places the delta at body position i, uses full (existing + delta)
-  for positions before i, and uses old (pre-iteration snapshot) for positions
-  after i. This guarantees every derivation that involves at least one delta
-  fact is counted exactly once, avoiding duplicates.
+  For a rule with k positive body atoms, each fixpoint iteration evaluates k
+  variants. Variant i places the delta at body position i, uses full
+  (existing + delta) for positions before i, and uses old (pre-iteration
+  snapshot) for positions after i. This guarantees every derivation that
+  involves at least one delta fact is counted exactly once, avoiding duplicates.
+
+  ## Negation handling
+
+  Negative body atoms (`{:negative, %IR.Atom{}}`) are **filters**, not
+  participants in the k-position delta scheme. After all positive atoms are
+  joined and constraints applied, each binding is checked against the negative
+  atoms: a binding survives only if no tuple in the `full` relation matches
+  the negative atom's terms under that binding. This ensures negation is
+  evaluated against the fully-materialised lower-stratum relation, which is
+  correct for stratified Datalog.
 
   ## Four views per relation
 
@@ -36,7 +46,7 @@ defmodule ExDatalog.Engine.Evaluator do
   @doc """
   Evaluates a single rule for one fixpoint iteration using k-position delta.
 
-  Returns a `MapSet` of head tuples derived by this rule in this iteration.
+  Returns a list of head tuples derived by this rule in this iteration.
   Each tuple is an Elixir tuple of native values.
 
   Parameters:
@@ -51,6 +61,9 @@ defmodule ExDatalog.Engine.Evaluator do
   - Position i uses `delta(relation_i)`
   - Positions j < i use `full(relation_j)`
   - Positions j > i use `old(relation_j)`
+
+  Negative atoms are applied as filters after the join, checking that no tuple
+  in the `full` relation matches under the current binding.
 
   The results of all variants are unioned, then deduplicated against `full`
   for the head relation.
@@ -80,6 +93,29 @@ defmodule ExDatalog.Engine.Evaluator do
     end
   end
 
+  @doc """
+  Checks whether a binding satisfies a negative body atom.
+
+  A negative atom `not R(t1, ..., tn)` is satisfied when no tuple in `full`
+  for relation `R` matches the atom's terms under the given binding. If the
+  atom's terms contain variables already bound, only tuples consistent with
+  those bindings are considered. If the atom's terms contain only wildcards,
+  any tuple in the relation causes the negative atom to fail.
+
+  Returns `true` if the binding passes (no matching tuple), `false` otherwise.
+  """
+  @spec check_negative_atom(IR.Atom.t(), binding(), relation_facts()) :: boolean()
+  def check_negative_atom(%IR.Atom{relation: relation, terms: terms}, binding, full) do
+    tuples = Map.get(full, relation, MapSet.new())
+
+    not Enum.any?(tuples, fn tuple ->
+      case Join.match_tuple(terms, tuple, binding) do
+        {:ok, _extended} -> true
+        :no_match -> false
+      end
+    end)
+  end
+
   defp positive_atoms(%IR.Rule{body: body}) do
     body
     |> Enum.filter(fn
@@ -97,6 +133,9 @@ defmodule ExDatalog.Engine.Evaluator do
         {:positive, atom}, acc ->
           tuples = MapSet.to_list(Map.get(full, atom.relation, MapSet.new()))
           Join.join(acc, atom.terms, tuples)
+
+        {:negative, atom}, acc ->
+          Enum.filter(acc, fn b -> check_negative_atom(atom, b, full) end)
 
         {:constraint, c}, acc ->
           apply_constraint_to_bindings(c, acc)
@@ -142,6 +181,7 @@ defmodule ExDatalog.Engine.Evaluator do
       end)
 
     bindings = apply_constraints(rule.body, bindings)
+    bindings = apply_negation(rule.body, bindings, full)
 
     case bindings do
       [] -> []
@@ -157,6 +197,16 @@ defmodule ExDatalog.Engine.Evaluator do
         {:ok, new_b} -> [new_b]
         :filter -> []
       end
+    end)
+  end
+
+  defp apply_negation(body, bindings, full) do
+    negative_atoms = for {:negative, atom} <- body, do: atom
+
+    Enum.filter(bindings, fn binding ->
+      Enum.all?(negative_atoms, fn atom ->
+        check_negative_atom(atom, binding, full)
+      end)
     end)
   end
 end

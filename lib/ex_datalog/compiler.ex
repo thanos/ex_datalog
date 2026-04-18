@@ -99,8 +99,8 @@ defmodule ExDatalog.Compiler do
       stratum = Map.get(rule_strata, idx, 0)
       {stratum, rule.head.relation, idx}
     end)
-    |> Enum.with_index(fn {rule, _orig_idx}, new_idx ->
-      stratum = Map.get(rule_strata, new_idx, 0)
+    |> Enum.with_index(fn {rule, orig_idx}, new_idx ->
+      stratum = Map.get(rule_strata, orig_idx, 0)
       compile_rule(rule, new_idx, stratum)
     end)
   end
