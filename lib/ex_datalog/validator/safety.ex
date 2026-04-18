@@ -10,7 +10,8 @@ defmodule ExDatalog.Validator.Safety do
 
   1. **Unsafe head variable** — a variable appears in the rule head but not
      in any positive body atom or arithmetic constraint result. Head variables
-     must be range-restricted.
+     may reference **any** arithmetic result regardless of constraint order,
+     because all arithmetic constraints fire before head projection.
 
   2. **Unbound constraint variable** — a variable in a comparison constraint
      or in the input operands of an arithmetic constraint is not bound by any
@@ -23,6 +24,21 @@ defmodule ExDatalog.Validator.Safety do
 
   Wildcards in body atoms are allowed — they match any value without binding.
 
+  ## Head vs. constraint asymmetry
+
+  A variable introduced by an arithmetic constraint is always available to
+  the rule head, regardless of where the constraint appears in the list. But
+  the same variable is only available to **later** constraints. This means:
+
+      # Safe: Z is bound by the constraint, head may reference it
+      total(X, Z) :- value(X, A), Z = A + 1
+
+      # Safe: head references Z even though Z comes from a later constraint
+      combined(X, Z, W) :- value(X, A), W = Z + 1, Z = A + 2
+
+      # Unsafe: W references Z at constraint position before Z is computed
+      bad(X, W) :- value(X, A), W = Z + 1, Z = A + 2   # ERROR: Z unbound
+
   ## Examples
 
       # Safe: X and Y are bound by positive body atoms
@@ -33,9 +49,6 @@ defmodule ExDatalog.Validator.Safety do
 
       # Safe: arithmetic result variable Z is bound by the constraint
       total(X, Z) :- value(X, A), value(Y, A), Z = X + Y
-
-      # Unsafe ordering: W references Z before Z is computed
-      bad(X, W) :- value(X, A), W = Z + 1, Z = A + 2   # ERROR: Z unbound at constraint 0
 
   """
 
