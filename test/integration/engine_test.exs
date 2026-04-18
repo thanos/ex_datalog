@@ -1,7 +1,7 @@
 defmodule ExDatalog.IntegrationTest do
   use ExUnit.Case, async: true
 
-  alias ExDatalog.{Atom, Constraint, Program, Rule, Term}
+  alias ExDatalog.{Atom, Constraint, Explain, Program, Rule, Term}
 
   describe "end-to-end: positive rules" do
     test "transitive closure: ancestor from parent" do
@@ -462,6 +462,76 @@ defmodule ExDatalog.IntegrationTest do
 
       assert {:error, message} = ExDatalog.evaluate(ir)
       assert message =~ "unstratifiable negation"
+    end
+  end
+
+  describe "end-to-end: provenance and explain" do
+    test "query without explain: true has nil provenance" do
+      result =
+        Program.new()
+        |> Program.add_relation("edge", [:atom, :atom])
+        |> Program.add_relation("path", [:atom, :atom])
+        |> Program.add_fact("edge", [:a, :b])
+        |> Program.add_rule(
+          Rule.new(
+            Atom.new("path", [Term.var("X"), Term.var("Y")]),
+            [{:positive, Atom.new("edge", [Term.var("X"), Term.var("Y")])}]
+          )
+        )
+        |> ExDatalog.query()
+
+      assert {:ok, result} = result
+      assert result.provenance == nil
+    end
+
+    test "query with explain: true produces derivation tree" do
+      {:ok, result} =
+        Program.new()
+        |> Program.add_relation("edge", [:atom, :atom])
+        |> Program.add_relation("path", [:atom, :atom])
+        |> Program.add_fact("edge", [:a, :b])
+        |> Program.add_rule(
+          Rule.new(
+            Atom.new("path", [Term.var("X"), Term.var("Y")]),
+            [{:positive, Atom.new("edge", [Term.var("X"), Term.var("Y")])}]
+          )
+        )
+        |> ExDatalog.query(explain: true)
+
+      assert result.provenance != nil
+      assert result.provenance.fact_origins["edge"][{:a, :b}] == :base
+      assert is_integer(result.provenance.fact_origins["path"][{:a, :b}])
+
+      assert {:ok, :base_fact} = Explain.explain(result, "edge", {:a, :b})
+
+      assert {:ok, tree} = Explain.explain(result, "path", {:a, :b})
+      assert %Explain.Node{} = tree
+      assert tree.fact == {:a, :b}
+      assert :base_fact in tree.children
+    end
+
+    test "explain with negation traces provenance" do
+      {:ok, result} =
+        Program.new()
+        |> Program.add_relation("male", [:atom])
+        |> Program.add_relation("married", [:atom, :atom])
+        |> Program.add_relation("bachelor", [:atom])
+        |> Program.add_fact("male", [:bob])
+        |> Program.add_fact("married", [:alice, :carol])
+        |> Program.add_rule(
+          Rule.new(
+            Atom.new("bachelor", [Term.var("X")]),
+            [
+              {:positive, Atom.new("male", [Term.var("X")])},
+              {:negative, Atom.new("married", [Term.var("X"), Term.wildcard()])}
+            ]
+          )
+        )
+        |> ExDatalog.query(explain: true)
+
+      assert {:ok, tree} = Explain.explain(result, "bachelor", {:bob})
+      assert %Explain.Node{} = tree
+      assert tree.fact == {:bob}
     end
   end
 end

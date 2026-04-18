@@ -5,6 +5,11 @@ defmodule ExDatalog.Result do
   Contains the derived fact sets for each relation, along with evaluation
   statistics (iteration count, duration, relation sizes).
 
+  When provenance tracking is enabled (via `explain: true`), the `provenance`
+  field records which rule derived each fact. Base facts (EDB) are attributed
+  as `:base`. This field is `nil` when provenance tracking is disabled,
+  ensuring zero overhead for the common case.
+
   ## Access functions
 
   - `get/2` — all tuples for a relation.
@@ -12,6 +17,11 @@ defmodule ExDatalog.Result do
   - `size/2` — number of tuples in a relation.
   - `relations/1` — list of all relation names in the result.
   """
+
+  @type provenance :: %{
+          fact_origins: %{String.t() => %{tuple() => non_neg_integer() | :base}},
+          rules: %{non_neg_integer() => ExDatalog.IR.Rule.t()}
+        }
 
   @type stats :: %{
           iterations: non_neg_integer(),
@@ -21,10 +31,11 @@ defmodule ExDatalog.Result do
 
   @type t :: %__MODULE__{
           relations: %{String.t() => MapSet.t(tuple())},
-          stats: stats()
+          stats: stats(),
+          provenance: provenance() | nil
         }
 
-  defstruct [:relations, :stats]
+  defstruct [:relations, :stats, provenance: nil]
 
   @doc """
   Returns all tuples for a relation as a MapSet.
