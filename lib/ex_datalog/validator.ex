@@ -49,7 +49,11 @@ defmodule ExDatalog.Validator do
     # insertion order. We do NOT return the reversed struct — the original
     # program is returned unchanged so that validate/1 is referentially
     # transparent: program == elem(validate(program), 1).
-    normalized = %{program | facts: Enum.reverse(program.facts), rules: Enum.reverse(program.rules)}
+    normalized = %{
+      program
+      | facts: Enum.reverse(program.facts),
+        rules: Enum.reverse(program.rules)
+    }
 
     errors =
       []
