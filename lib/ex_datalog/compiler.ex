@@ -24,6 +24,12 @@ defmodule ExDatalog.Compiler do
   The output is a `%ExDatalog.IR{}` struct that is deterministic for a given
   input program: compiling the same program twice produces identical IR.
 
+  After compilation, the IR is validated against structural invariants:
+  unique rule IDs, stratum bounds, rule-in-stratum consistency, and
+  relation reference integrity. Violations raise an error — these indicate
+  a bug in the compiler, not an invalid program (programs are validated
+  before compilation).
+
   ## Examples
 
       iex> alias ExDatalog.{Program, Rule, Atom, Term, Compiler}
@@ -77,12 +83,81 @@ defmodule ExDatalog.Compiler do
     facts = compile_facts(program)
     rules = compile_rules(program, rule_strata)
 
-    %IR{
+    ir = %IR{
       relations: relations,
       facts: facts,
       rules: rules,
       strata: strata
     }
+
+    :ok = validate_ir!(ir)
+    ir
+  end
+
+  defp validate_ir!(%IR{rules: rules, strata: strata, relations: relations, facts: facts}) do
+    rule_ids = Enum.map(rules, & &1.id)
+    relation_names = MapSet.new(relations, & &1.name)
+    fact_relations = MapSet.new(facts, & &1.relation)
+    head_relations = MapSet.new(rules, & &1.head.relation)
+
+    rule_id_uniqueness!(rule_ids)
+    stratum_bounds!(rules, strata)
+    rule_in_stratum_consistency!(rules, strata)
+    relation_references!(fact_relations, head_relations, relation_names)
+
+    :ok
+  end
+
+  defp rule_id_uniqueness!(rule_ids) do
+    duplicate_ids = rule_ids -- Enum.uniq(rule_ids)
+
+    unless duplicate_ids == [] do
+      raise "IR validation failed: duplicate rule IDs: #{inspect(Enum.uniq(duplicate_ids))}"
+    end
+  end
+
+  defp stratum_bounds!(rules, strata) do
+    max_stratum =
+      case strata do
+        [] -> -1
+        _ -> strata |> Enum.map(& &1.index) |> Enum.max()
+      end
+
+    out_of_bounds =
+      Enum.filter(rules, fn rule -> rule.stratum < 0 or rule.stratum > max_stratum end)
+
+    unless out_of_bounds == [] do
+      raise "IR validation failed: rules with stratum out of bounds [0..#{max_stratum}]: #{inspect(Enum.map(out_of_bounds, & &1.id))}"
+    end
+  end
+
+  defp rule_in_stratum_consistency!(rules, strata) do
+    rule_ids = MapSet.new(rules, & &1.id)
+    stratum_rule_ids = strata |> Enum.flat_map(& &1.rule_ids) |> MapSet.new()
+
+    missing_from_strata = MapSet.difference(rule_ids, stratum_rule_ids)
+    extra_in_strata = MapSet.difference(stratum_rule_ids, rule_ids)
+
+    unless MapSet.size(missing_from_strata) == 0 do
+      raise "IR validation failed: rules not in any stratum: #{inspect(MapSet.to_list(missing_from_strata))}"
+    end
+
+    unless MapSet.size(extra_in_strata) == 0 do
+      raise "IR validation failed: strata reference non-existent rule IDs: #{inspect(MapSet.to_list(extra_in_strata))}"
+    end
+  end
+
+  defp relation_references!(fact_relations, head_relations, declared_relations) do
+    undeclared_facts = MapSet.difference(fact_relations, declared_relations)
+    undeclared_heads = MapSet.difference(head_relations, declared_relations)
+
+    unless MapSet.size(undeclared_facts) == 0 do
+      raise "IR validation failed: facts reference undeclared relations: #{inspect(MapSet.to_list(undeclared_facts))}"
+    end
+
+    unless MapSet.size(undeclared_heads) == 0 do
+      raise "IR validation failed: rule heads reference undeclared relations: #{inspect(MapSet.to_list(undeclared_heads))}"
+    end
   end
 
   defp compile_relations(%Program{relations: rels}) do
