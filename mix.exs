@@ -94,6 +94,7 @@ defmodule ExDatalog.MixProject do
   defp package do
     [
       licenses: ["MIT"],
+      maintainers: ["Thanos Vassilakis"],
       links: %{"GitHub" => @source_url},
       files: ~w(lib .formatter.exs mix.exs README.md LICENSE CHANGELOG.md)
     ]
@@ -104,7 +105,7 @@ defmodule ExDatalog.MixProject do
       main: "ExDatalog",
       source_ref: "v#{@version}",
       source_url: @source_url,
-      extras: ["README.md"],
+      extras: ["README.md", "docs/what-is-datalog.md"],
       groups_for_modules: [
         "Program Builder": [
           ExDatalog.Program,

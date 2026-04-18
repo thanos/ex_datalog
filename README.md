@@ -6,16 +6,22 @@ ExDatalog implements bottom-up Datalog evaluation using semi-naive fixpoint
 computation. Programs are built with a declarative builder API, validated,
 compiled to an engine-neutral IR, and evaluated by a pluggable backend.
 
+**New to Datalog?** Read the [What is Datalog?](docs/what-is-datalog.md) guide
+for a comprehensive introduction covering history, concepts, industry use cases,
+domain-specific examples (fraud detection, supply chain, social networks,
+infrastructure), and how Datalog can serve as a knowledge layer for LLMs.
+
 ## Features
 
 - Builder API for constructing programs (relations, facts, rules)
 - Full term model: variables, constants, wildcards
-- Built-in predicates: comparisons (`>`, `<`, `>=`, `<=`, `=`, `!=`) and arithmetic (`+`, `-`, `*`, `/`)
+- Built-in predicates: comparisons (`>`, `<`, `>=`, `<=`, `=`, `!=`) and arithmetic (`+`, `-`, `*`, `div`)
 - Negation with stratification
 - Recursive rules with fixpoint evaluation
 - Pluggable storage and engine backends
 - Provenance / derivation explain (`explain: true`)
 - Telemetry integration (`:telemetry` events)
+- 369 tests, 92% coverage
 
 ## Quick Start
 
@@ -55,6 +61,22 @@ result.provenance.fact_origins
 #=> %{"ancestor" => %{{:alice, :bob} => "rule_0", ...}}
 ```
 
+## Negation
+
+Use negative body atoms with stratified evaluation:
+
+```elixir
+Program.add_rule(
+  Rule.new(
+    Atom.new("bachelor", [Term.var("X")]),
+    [
+      {:positive, Atom.new("male", [Term.var("X")])},
+      {:negative, Atom.new("married", [Term.var("X"), Term.wildcard()])}
+    ]
+  )
+)
+```
+
 ## Installation
 
 Add `ex_datalog` to your dependencies in `mix.exs`:
@@ -67,25 +89,33 @@ def deps do
 end
 ```
 
+## Documentation
+
+- [What is Datalog?](docs/what-is-datalog.md) — introduction, history, Prolog comparison, industry use cases, LLM integration patterns
+- [API reference](https://hexdocs.pm/ex_datalog) — full module and function documentation
+
+Generate docs locally:
+
+```
+mix docs
+```
+
 ## Roadmap
 
 All phases ship together in **v0.1.0**. The phased build approach is an
 internal development discipline — each phase is independently tested and
 reviewed before proceeding, but they are not separate releases.
 
-### v0.1.0 — Initial Release
-
-| Phase | Name | Status | What ships |
-|---|---|---|---|
-| 0 | Architecture & Design | Done | System blueprint, algorithm decisions, IR specification |
-| 1 | AST + DSL + Term Model | Done | Program builder, term types, constraints, structural validation |
-| 2 | Semantic Validation | Done | Variable safety, range restriction, stratified negation detection |
-| 3 | IR Compiler | Done | AST to engine-neutral IR, Tarjan SCC stratification |
-| 4 | Semi-Naive Engine | Done | Sequential-scan fixpoint evaluation, storage abstraction, full pipeline |
-| 5 | Negation + Stratification | Done | Stratum-ordered evaluation, negative body literals |
-| 6 | Explain / Provenance | Done | Opt-in derivation attribution, rule tracing |
-| 7 | Telemetry | Done | `:telemetry` events, execution metrics |
-| 8 | Future Extensions | Design only | ETS storage, Rust NIF, incremental evaluation |
+| Phase | Name | What ships |
+|---|---|---|
+| 0 | Architecture & Design | System blueprint, algorithm decisions, IR specification |
+| 1 | AST + DSL + Term Model | Program builder, term types, constraints, structural validation |
+| 2 | Semantic Validation | Variable safety, range restriction, stratified negation detection |
+| 3 | IR Compiler | AST to engine-neutral IR, Tarjan SCC stratification |
+| 4 | Semi-Naive Engine | Sequential-scan fixpoint evaluation, storage abstraction, full pipeline |
+| 5 | Negation + Stratification | Stratum-ordered evaluation, negative body literals |
+| 6 | Explain / Provenance | Opt-in derivation attribution, rule tracing |
+| 7 | Telemetry | `:telemetry` events, execution metrics |
 
 ### Post v0.1.0
 
@@ -122,10 +152,6 @@ ExDatalog.Storage.Map  (Maps + MapSets)
 ExDatalog.Result
 ```
 
-## Documentation
+## License
 
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc):
-
-```
-mix docs
-```
+MIT
