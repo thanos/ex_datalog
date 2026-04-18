@@ -8,6 +8,11 @@ defmodule ExDatalog.Program do
   - **Facts** — ground tuples asserted as true for a given relation.
   - **Rules** — inference rules that derive new facts from existing ones.
 
+  Relation names are string keys stored in a map. They do not collide with
+  internal atoms like `:positive`, `:negative`, `:wildcard`, or `:constraint`
+  because those atoms appear in tuple positions (`{:positive, atom}`),
+  not as map keys.
+
   Programs are built using a pipeline of builder functions. Structural
   validation (arity checking, relation existence) is done at build time by
   `add_relation/3`, `add_fact/3`, and `add_rule/2`. On failure these return

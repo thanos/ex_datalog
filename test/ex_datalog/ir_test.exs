@@ -76,11 +76,12 @@ defmodule ExDatalog.IRTest do
       assert serialized == %{relation: "parent", terms: [{:var, "X"}, {:const, {:atom, :alice}}]}
     end
 
-    test "IR.Constraint.serialize/1 omits result key when nil" do
+    test "IR.Constraint.serialize/1 includes result key when nil" do
       c = %IR.Constraint{op: :gt, left: {:var, "X"}, right: {:const, {:int, 0}}, result: nil}
       serialized = IR.Constraint.serialize(c)
 
-      assert Map.has_key?(serialized, :result) == false
+      assert Map.has_key?(serialized, :result)
+      assert serialized.result == nil
       assert serialized.op == :gt
     end
 

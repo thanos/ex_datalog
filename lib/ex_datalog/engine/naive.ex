@@ -345,7 +345,7 @@ defmodule ExDatalog.Engine.Naive do
 
       state = insert_new(ctx.state, new_tuples, ctx.storage_mod)
       old = ctx.full
-      full = snapshot_facts(state, ctx.all_rels, ctx.storage_mod)
+      full = merge_new(ctx.full, new_tuples)
       delta = compute_delta(full, old, ctx.all_rels)
 
       fixpoint(%{
@@ -415,6 +415,12 @@ defmodule ExDatalog.Engine.Naive do
       Enum.reduce(MapSet.to_list(tuples), acc, fn tuple, s_acc ->
         storage_mod.insert(s_acc, rel, tuple)
       end)
+    end)
+  end
+
+  defp merge_new(full, new_tuples) do
+    Enum.reduce(new_tuples, full, fn {rel, new_set}, acc ->
+      Map.update(acc, rel, new_set, &MapSet.union(&1, new_set))
     end)
   end
 

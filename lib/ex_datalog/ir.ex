@@ -135,7 +135,6 @@ defmodule ExDatalog.IR do
     @spec serialize(t()) :: map()
     def serialize(%__MODULE__{op: op, left: left, right: right, result: result}) do
       %{op: op, left: left, right: right, result: result}
-      |> then(fn m -> if result == nil, do: Map.delete(m, :result), else: m end)
     end
   end
 
