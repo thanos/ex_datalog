@@ -13,6 +13,25 @@ defmodule ExDatalog.Program do
   `add_relation/3`, `add_fact/3`, and `add_rule/2`. On failure these return
   `{:error, String.t()}` with a human-readable message.
 
+  ## Error propagation in pipelines
+
+  Because builder functions return `t() | {:error, String.t()}`, a failed
+  step will short-circuit the rest of the pipeline: the `{:error, _}` tuple
+  passes through unchanged. This means you can pipe freely and check for
+  errors at the end:
+
+      {:ok, result} =
+        Program.new()
+        |> Program.add_relation("edge", [:atom, :atom])
+        |> Program.add_relation("path", [:atom, :atom])
+        |> Program.add_fact("edge", [:a, :b])
+        |> Program.add_rule(...)
+        |> ExDatalog.query()
+
+  If `add_relation/3` fails, the `{:error, msg}` tuple flows through
+  `add_fact/3` and `add_rule/2` without raising, and `ExDatalog.query/1`
+  will detect the error struct and return `{:error, [msg]}`.
+
   Semantic validation (variable safety, stratification, constraint binding)
   is done separately by `ExDatalog.Validator.validate/1`, which returns
   `{:error, [ExDatalog.Validator.Error.t()]}` with structured error structs.
@@ -118,6 +137,8 @@ defmodule ExDatalog.Program do
     end
   end
 
+  def add_relation({:error, _} = err, _name, _types), do: err
+
   @doc """
   Adds a ground fact to the program.
 
@@ -163,6 +184,8 @@ defmodule ExDatalog.Program do
     end
   end
 
+  def add_fact({:error, _} = err, _relation, _values), do: err
+
   @doc """
   Adds a rule to the program.
 
@@ -200,6 +223,8 @@ defmodule ExDatalog.Program do
       %__MODULE__{program | rules: [rule | program.rules]}
     end
   end
+
+  def add_rule({:error, _} = err, %Rule{}), do: err
 
   @doc """
   Returns the schema for a relation, or `nil` if not defined.

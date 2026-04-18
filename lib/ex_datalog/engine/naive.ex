@@ -58,10 +58,31 @@ defmodule ExDatalog.Engine.Naive do
   @default_timeout_ms 30_000
 
   @impl ExDatalog.Engine
+  @doc """
+  Returns the engine's stable identifier, `"naive"`.
+
+  Used for telemetry metadata and engine dispatch.
+  """
   @spec name() :: String.t()
   def name, do: "naive"
 
   @impl ExDatalog.Engine
+  @doc """
+  Evaluates a compiled IR program to fixpoint.
+
+  Accepts a compiled `IR.t()` struct (from `Compiler.compile/1`) and an
+  optional keyword list of options. Returns `{:ok, %Result{}}` on success
+  or `{:error, reason}` on failure.
+
+  ## Options
+
+  - `:storage` — storage module (default: `ExDatalog.Storage.Map`)
+  - `:max_iterations` — per-stratum iteration limit (default: `10_000`)
+  - `:timeout_ms` — per-stratum wall-clock timeout in ms (default: `30_000`)
+  - `:explain` — enable provenance tracking (default: `false`)
+
+  See `#{inspect(__MODULE__)}` moduledoc for algorithm details.
+  """
   @spec evaluate(IR.t(), keyword()) :: {:ok, Result.t()} | {:error, term()}
   def evaluate(%IR{} = ir, opts \\ []) do
     ExDatalog.Telemetry.emit_start(ir)
@@ -305,14 +326,22 @@ defmodule ExDatalog.Engine.Naive do
   end
 
   defp iterate(ctx) do
-    derived_all = derive_all(ctx.rules, ctx.full, ctx.delta, ctx.old)
+    track_origins = ctx.origins != nil
+
+    {derived_all, derived_origins} =
+      derive(ctx.rules, ctx.full, ctx.delta, ctx.old, track_origins)
+
     new_tuples = filter_new(derived_all, ctx.full)
 
     if all_mapsets_empty?(new_tuples) do
       ctx
     else
-      derived_origins = derive_origins(ctx.rules, ctx.full, ctx.delta, ctx.old)
-      origins = merge_origins(ctx.origins, derived_origins)
+      origins =
+        if track_origins do
+          merge_origins(ctx.origins, derived_origins)
+        else
+          ctx.origins
+        end
 
       state = insert_new(ctx.state, new_tuples, ctx.storage_mod)
       old = ctx.full
@@ -331,30 +360,41 @@ defmodule ExDatalog.Engine.Naive do
     end
   end
 
-  defp derive_all(rules, full, delta, old) do
-    rules
-    |> Enum.flat_map(fn rule ->
-      head_rel = rule.head.relation
+  defp derive(rules, full, delta, old, track_origins) do
+    {derived, origins} =
+      Enum.reduce(rules, {%{}, %{}}, fn rule, {derived_acc, origins_acc} ->
+        head_rel = rule.head.relation
+        tuples = Evaluator.eval_rule_iteration(rule, full, delta, old)
 
-      Evaluator.eval_rule_iteration(rule, full, delta, old)
-      |> Enum.map(fn tuple -> {head_rel, tuple} end)
-    end)
-    |> Enum.group_by(fn {rel, _tuple} -> rel end, fn {_rel, tuple} -> tuple end)
-    |> Enum.map(fn {rel, tuples} -> {rel, MapSet.new(Enum.uniq(tuples))} end)
-    |> Map.new()
+        new_derived =
+          Map.update(
+            derived_acc,
+            head_rel,
+            MapSet.new(tuples),
+            &MapSet.union(&1, MapSet.new(tuples))
+          )
+
+        new_origins = maybe_track_origins(origins_acc, head_rel, tuples, rule.id, track_origins)
+
+        {new_derived, new_origins}
+      end)
+
+    {derived, if(track_origins, do: origins, else: nil)}
   end
 
-  defp derive_origins(rules, full, delta, old) do
-    rules
-    |> Enum.flat_map(fn rule ->
-      head_rel = rule.head.relation
+  defp maybe_track_origins(origins_acc, head_rel, tuples, rule_id, true) do
+    rule_origins = Map.new(tuples, fn tuple -> {tuple, rule_id} end)
 
-      Evaluator.eval_rule_iteration(rule, full, delta, old)
-      |> Enum.map(fn tuple -> {head_rel, tuple, rule.id} end)
-    end)
-    |> Enum.reduce(%{}, fn {rel, tuple, rule_id}, acc ->
-      Map.update(acc, rel, %{tuple => rule_id}, fn m -> Map.put(m, tuple, rule_id) end)
-    end)
+    Map.update(
+      origins_acc,
+      head_rel,
+      rule_origins,
+      &Map.merge(&1, rule_origins)
+    )
+  end
+
+  defp maybe_track_origins(origins_acc, _head_rel, _tuples, _rule_id, false) do
+    origins_acc
   end
 
   defp merge_origins(existing, new) do

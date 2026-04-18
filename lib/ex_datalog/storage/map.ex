@@ -43,6 +43,15 @@ defmodule ExDatalog.Storage.Map do
 
   defstruct relations: %{}, indexes: %{}, schemas: %{}
 
+  @doc """
+  Initializes storage for the given relation schemas.
+
+  `schemas` is a map from relation name to `%{arity: n, types: [atom()]}`.
+  Creates an empty `MapSet` for each relation and returns the initial state.
+
+  Raises if two schemas share the same relation name (should be caught by
+  validation before reaching storage).
+  """
   @impl ExDatalog.Storage
   @spec init(ExDatalog.Storage.schemas()) :: t()
   def init(schemas) do
@@ -54,6 +63,12 @@ defmodule ExDatalog.Storage.Map do
     %__MODULE__{relations: relations, indexes: %{}, schemas: schemas}
   end
 
+  @doc """
+  Inserts a single tuple into a relation.
+
+  Idempotent: inserting a tuple that already exists is a no-op (MapSet semantics).
+  Raises `ArgumentError` if `relation` is not in the schema.
+  """
   @impl ExDatalog.Storage
   @spec insert(t(), ExDatalog.Storage.relation_name(), ExDatalog.Storage.tuple_values()) :: t()
   def insert(%__MODULE__{relations: rels} = state, relation, tuple) do
@@ -66,6 +81,13 @@ defmodule ExDatalog.Storage.Map do
     end
   end
 
+  @doc """
+  Inserts an enumerable of tuples into a relation.
+
+  More efficient than repeated `insert/3` calls for bulk loading, as it
+  reduces Map updates. Idempotent for individual tuples.
+  Raises `ArgumentError` if `relation` is not in the schema.
+  """
   @impl ExDatalog.Storage
   @spec insert_many(t(), ExDatalog.Storage.relation_name(), Enumerable.t()) :: t()
   def insert_many(%__MODULE__{relations: rels} = state, relation, tuples) do
@@ -79,6 +101,12 @@ defmodule ExDatalog.Storage.Map do
     end
   end
 
+  @doc """
+  Checks whether a tuple exists in a relation.
+
+  Returns `true` if `tuple` is a member of the `relation`'s MapSet,
+  `false` otherwise. Returns `false` if `relation` is unknown.
+  """
   @impl ExDatalog.Storage
   @spec member?(t(), ExDatalog.Storage.relation_name(), ExDatalog.Storage.tuple_values()) ::
           boolean()
@@ -89,6 +117,11 @@ defmodule ExDatalog.Storage.Map do
     end
   end
 
+  @doc """
+  Returns the number of tuples stored in a relation.
+
+  Returns `0` if `relation` is unknown.
+  """
   @impl ExDatalog.Storage
   @spec size(t(), ExDatalog.Storage.relation_name()) :: non_neg_integer()
   def size(%__MODULE__{relations: rels}, relation) do
@@ -98,6 +131,12 @@ defmodule ExDatalog.Storage.Map do
     end
   end
 
+  @doc """
+  Returns all tuples in a relation as a list.
+
+  Used by the engine to iterate over a relation's facts during join
+  evaluation. Returns `[]` if `relation` is unknown.
+  """
   @impl ExDatalog.Storage
   @spec stream(t(), ExDatalog.Storage.relation_name()) :: Enumerable.t()
   def stream(%__MODULE__{relations: rels}, relation) do
@@ -107,6 +146,7 @@ defmodule ExDatalog.Storage.Map do
     end
   end
 
+  @doc false
   @impl ExDatalog.Storage
   @spec get_indexed(
           t(),
@@ -128,6 +168,7 @@ defmodule ExDatalog.Storage.Map do
     end
   end
 
+  @doc false
   @impl ExDatalog.Storage
   @spec build_index(t(), ExDatalog.Storage.relation_name(), ExDatalog.Storage.index_key()) :: t()
   def build_index(%__MODULE__{relations: rels, indexes: indexes} = state, relation, columns) do
@@ -141,6 +182,7 @@ defmodule ExDatalog.Storage.Map do
     end
   end
 
+  @doc false
   @impl ExDatalog.Storage
   @spec update_index(
           t(),
@@ -177,6 +219,11 @@ defmodule ExDatalog.Storage.Map do
     %{state | indexes: Map.put(indexes, key, updated_index)}
   end
 
+  @doc """
+  Returns a sorted list of all relation names in the storage.
+
+  Useful for debugging and introspection.
+  """
   @impl ExDatalog.Storage
   @spec relations(t()) :: [ExDatalog.Storage.relation_name()]
   def relations(%__MODULE__{schemas: schemas}) do

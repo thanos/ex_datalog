@@ -14,8 +14,8 @@ compiled to an engine-neutral IR, and evaluated by a pluggable backend.
 - Negation with stratification
 - Recursive rules with fixpoint evaluation
 - Pluggable storage and engine backends
-- Provenance / derivation explain (planned)
-- Telemetry integration (planned)
+- Provenance / derivation explain (`explain: true`)
+- Telemetry integration (`:telemetry` events)
 
 ## Quick Start
 
@@ -47,6 +47,14 @@ alias ExDatalog.{Program, Rule, Atom, Term}
   |> ExDatalog.query()
 ```
 
+Enable provenance tracking to see which rule derived each fact:
+
+```elixir
+{:ok, result} = ExDatalog.query(program, explain: true)
+result.provenance.fact_origins
+#=> %{"ancestor" => %{{:alice, :bob} => "rule_0", ...}}
+```
+
 ## Installation
 
 Add `ex_datalog` to your dependencies in `mix.exs`:
@@ -71,13 +79,13 @@ reviewed before proceeding, but they are not separate releases.
 |---|---|---|---|
 | 0 | Architecture & Design | Done | System blueprint, algorithm decisions, IR specification |
 | 1 | AST + DSL + Term Model | Done | Program builder, term types, constraints, structural validation |
-| 2 | Semantic Validation | In progress | Variable safety, range restriction, stratified negation detection |
-| 3 | IR Compiler | Pending | AST to engine-neutral IR, Tarjan SCC stratification |
-| 4 | Semi-Naive Engine | Pending | Hash-join fixpoint evaluation, storage abstraction, full pipeline |
-| 5 | Negation + Stratification | Pending | Stratum-ordered evaluation, negative body literals |
-| 6 | Explain / Provenance | Pending | Opt-in derivation trees, rule attribution |
-| 7 | Telemetry | Pending | `:telemetry` events, execution metrics |
-| 8 | Future Extensions | Pending | ETS storage, Rust NIF, incremental evaluation (design docs only) |
+| 2 | Semantic Validation | Done | Variable safety, range restriction, stratified negation detection |
+| 3 | IR Compiler | Done | AST to engine-neutral IR, Tarjan SCC stratification |
+| 4 | Semi-Naive Engine | Done | Sequential-scan fixpoint evaluation, storage abstraction, full pipeline |
+| 5 | Negation + Stratification | Done | Stratum-ordered evaluation, negative body literals |
+| 6 | Explain / Provenance | Done | Opt-in derivation attribution, rule tracing |
+| 7 | Telemetry | Done | `:telemetry` events, execution metrics |
+| 8 | Future Extensions | Design only | ETS storage, Rust NIF, incremental evaluation |
 
 ### Post v0.1.0
 
@@ -108,7 +116,7 @@ ExDatalog.Engine  (behaviour)
 ExDatalog.Engine.Naive  (semi-naive fixpoint)
         |
         v  uses
-ExDatalog.Storage.Map  (Maps + lazy indexes)
+ExDatalog.Storage.Map  (Maps + MapSets)
         |
         v
 ExDatalog.Result

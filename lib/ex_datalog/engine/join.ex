@@ -9,11 +9,14 @@ defmodule ExDatalog.Engine.Join do
     terms, extending the binding if variables are unbound or verifying them if
     already bound.
   - `join/3` — joins a list of binding environments with a collection of
-    tuples for a single body atom. This is the sequential-scan version.
-  - `join_indexed/4` — an indexed variant that uses a pre-built hash index
-    to avoid scanning the entire relation for each binding.
+    tuples for a single body atom. This is the sequential-scan version used
+    by `Engine.Naive` in v0.1.0.
   - `project/2` — projects a binding environment onto a head atom's variables,
     producing a result tuple.
+
+  The indexed variant `join_indexed/4` is implemented but **not used** by the
+  default engine. It is exposed for alternative engine implementations and
+  will be wired into the evaluator in a future release.
 
   All functions are pure and stateless; storage and index management is handled
   by `ExDatalog.Storage` and `Engine.Naive` respectively.
@@ -137,24 +140,7 @@ defmodule ExDatalog.Engine.Join do
     end
   end
 
-  @doc """
-  Joins a list of binding environments with an indexed lookup.
-
-  `join_columns` specifies which positions in the atom's terms correspond to
-  already-bound variables. The index key is computed from the binding values
-  at those columns.
-
-  This is O(bindings × matching_tuples) and avoids scanning the entire relation.
-
-  ## Examples
-
-      iex> alias ExDatalog.Engine.Join
-      iex> terms = [{:var, "X"}, {:var, "Y"}]
-      iex> index = %{{:alice} => [{:alice, :bob}, {:alice, :carol}]}
-      iex> Join.join_indexed([%{"X" => :alice}], terms, index, [0])
-      [%{"X" => :alice, "Y" => :bob}, %{"X" => :alice, "Y" => :carol}]
-
-  """
+  @doc false
   @spec join_indexed([binding()], [ir_term()], %{tuple() => [tuple()]}, [non_neg_integer()]) ::
           [binding()]
   def join_indexed(bindings, terms, index, join_columns) do
