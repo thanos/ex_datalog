@@ -298,5 +298,44 @@ defmodule ExDatalog.ValidatorTest do
       assert first == second
       assert first.facts == program.facts
     end
+
+    test "validate then add_rule then validate preserves builder order" do
+      alias ExDatalog.{Atom, Rule, Term}
+
+      program =
+        Program.new()
+        |> Program.add_relation("parent", [:atom, :atom])
+        |> Program.add_relation("ancestor", [:atom, :atom])
+
+      r1 =
+        Rule.new(
+          Atom.new("ancestor", [Term.var("X"), Term.var("Y")]),
+          [{:positive, Atom.new("parent", [Term.var("X"), Term.var("Y")])}]
+        )
+
+      r2 =
+        Rule.new(
+          Atom.new("ancestor", [Term.var("X"), Term.var("Z")]),
+          [
+            {:positive, Atom.new("parent", [Term.var("X"), Term.var("Y")])},
+            {:positive, Atom.new("ancestor", [Term.var("Y"), Term.var("Z")])}
+          ]
+        )
+
+      {:ok, v1} =
+        program
+        |> Program.add_rule(r1)
+        |> ExDatalog.validate()
+
+      # Add a second rule after validate, then validate again
+      {:ok, v2} =
+        v1
+        |> Program.add_rule(r2)
+        |> ExDatalog.validate()
+
+      # Rules stay in prepend order (newest first): [r2, r1]
+      assert length(v2.rules) == 2
+      assert hd(v2.rules).head.relation == "ancestor"
+    end
   end
 end
