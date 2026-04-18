@@ -75,7 +75,7 @@ defmodule ExDatalog.Atom do
 
   """
   @spec variables(t()) :: [Term.var_name()]
-  def variables(%__MODULE__{terms: terms}), do: Term.variables(terms)
+  def variables(%__MODULE__{terms: terms}), do: Term.variables(terms) |> Enum.uniq()
 
   @doc """
   Returns `true` if the atom is structurally valid.

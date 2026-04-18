@@ -10,6 +10,14 @@ defmodule ExDatalog.Explain do
   `%Node{}` struct containing the fact, the rule that derived it, and
   child nodes for each body atom that contributed.
 
+  ## Provenance semantics
+
+  Provenance tracks **one** rule per derived fact. When multiple rules derive
+  the same tuple, the last rule processed in the most recent iteration wins.
+  This is an engine-internal ordering, not a canonical "first derivation".
+  Users should treat provenance as "a rule that derived this fact", not "the
+  rule that derived this fact".
+
   ## Usage
 
       {:ok, result} = ExDatalog.query(program, explain: true)

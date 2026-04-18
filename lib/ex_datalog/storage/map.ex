@@ -230,6 +230,9 @@ defmodule ExDatalog.Storage.Map do
     schemas |> Map.keys() |> Enum.sort()
   end
 
+  # Builds a column-indexed lookup: %{composite_key => MapSet.t(tuple)}.
+  # Used by build_index (full rebuild) and as the fallback in update_index
+  # when no base index exists for the given key columns.
   defp build_index_from_set(set, columns) do
     Enum.reduce(set, %{}, fn tuple, idx ->
       k = project_tuple(tuple, columns)

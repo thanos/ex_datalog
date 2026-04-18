@@ -133,6 +133,7 @@ defmodule ExDatalog.MixProject do
 
   defp verify(_) do
     steps = [
+      # ["precommit", :dev],
       {"compile --warnings-as-errors", :dev},
       {"format --check-formatted", :dev},
       {"credo --strict", :dev},

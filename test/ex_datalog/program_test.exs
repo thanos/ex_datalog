@@ -124,6 +124,18 @@ defmodule ExDatalog.ProgramTest do
       program = Program.add_fact(program, "label", ["hello"])
       assert program.facts == [{"label", ["hello"]}]
     end
+
+    test "rejects variable term tuples as fact values" do
+      program = Program.new() |> Program.add_relation("edge", [:atom, :atom])
+      assert {:error, msg} = Program.add_fact(program, "edge", [{:var, "X"}, {:var, "Y"}])
+      assert msg =~ "unsupported fact value"
+    end
+
+    test "rejects float fact values" do
+      program = Program.new() |> Program.add_relation("price", [:atom, :integer])
+      assert {:error, msg} = Program.add_fact(program, "price", [:item, 9.99])
+      assert msg =~ "float"
+    end
   end
 
   describe "add_rule/2" do
