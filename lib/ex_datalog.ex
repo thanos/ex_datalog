@@ -14,7 +14,7 @@ defmodule ExDatalog do
       alias ExDatalog
       alias ExDatalog.{Program, Rule, Atom, Term}
 
-      result =
+      {:ok, result} =
         Program.new()
         |> Program.add_relation("parent", [:atom, :atom])
         |> Program.add_relation("ancestor", [:atom, :atom])
@@ -57,12 +57,12 @@ defmodule ExDatalog do
 
   `query/2` and `evaluate/2` accept:
 
-  - `engine` — backend module (default: `ExDatalog.Engine.Naive`, available in Phase 4)
-  - `storage` — storage module (default: `ExDatalog.Storage.Map`, available in Phase 4)
+  - `engine` — backend module (default: `ExDatalog.Engine.Naive`)
+  - `storage` — storage module (default: `ExDatalog.Storage.Map`)
   - `max_iterations` — fixpoint iteration limit (default: 10_000)
   - `timeout_ms` — wall-clock timeout in milliseconds (default: 30_000)
   - `goal` — `{relation_name, pattern}` to filter results (default: `nil`)
-  - `explain` — enable provenance tracking (default: `false`, available in Phase 6)
+  - `explain` — enable provenance tracking (default: `false`)
   """
 
   alias ExDatalog.{Program, Validator}

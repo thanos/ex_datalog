@@ -85,13 +85,23 @@ defmodule ExDatalog.Validator.Stratification do
   Assigns strata to all relations in the program.
 
   Returns a map from relation name to stratum number (0-based).
-  Only valid for programs that pass `check/1`.
+  Every declared relation is included — relations that appear only in
+  facts (not in any rule) are assigned stratum 0. Only valid for
+  programs that pass `check/1`.
   """
   @spec assign_strata(ExDatalog.Program.t()) :: %{String.t() => non_neg_integer()}
   def assign_strata(%ExDatalog.Program{} = program) do
     graph = build_graph(program)
     sccs = compute_sccs(graph)
-    assign_strata_greedy(graph, sccs)
+
+    all_rels =
+      program.relations
+      |> Map.keys()
+      |> MapSet.new()
+      |> MapSet.union(MapSet.new(all_vertices(graph)))
+      |> MapSet.to_list()
+
+    assign_strata_greedy(graph, sccs, all_rels)
   end
 
   @doc false
@@ -131,9 +141,8 @@ defmodule ExDatalog.Validator.Stratification do
 
   # --- Strata assignment ---
 
-  defp assign_strata_greedy(graph, sccs) do
-    all_vertices = all_vertices(graph)
-    initial = Map.new(all_vertices, fn rel -> {rel, 0} end)
+  defp assign_strata_greedy(graph, sccs, all_rels) do
+    initial = Map.new(all_rels, fn rel -> {rel, 0} end)
 
     Enum.reduce(sccs, initial, fn scc, strata ->
       scc_stratum = compute_scc_stratum(scc, graph, strata)

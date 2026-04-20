@@ -27,7 +27,8 @@ defmodule ExDatalog.MixProject do
       docs: docs(),
 
       # Test coverage
-      test_coverage: [tool: ExCoveralls]
+      test_coverage: [tool: ExCoveralls],
+      cli: cli()
     ]
   end
 

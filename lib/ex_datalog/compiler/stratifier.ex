@@ -64,12 +64,17 @@ defmodule ExDatalog.Compiler.Stratifier do
     for stratum_idx <- 0..max_stratum do
       rules_in_stratum = Map.get(grouped, stratum_idx, [])
       rule_ids = Enum.map(rules_in_stratum, fn {_s, id, _r} -> id end)
-      relations = rules_in_stratum |> Enum.map(fn {_s, _id, rel} -> rel end) |> Enum.uniq()
+      rule_relations = rules_in_stratum |> Enum.map(fn {_s, _id, rel} -> rel end) |> Enum.uniq()
+
+      edb_only =
+        Enum.filter(Map.keys(program.relations), fn rel ->
+          Map.get(strata, rel, 0) == stratum_idx and rel not in rule_relations
+        end)
 
       %ExDatalog.IR.Stratum{
         index: stratum_idx,
         rule_ids: rule_ids,
-        relations: relations
+        relations: Enum.uniq(rule_relations ++ edb_only)
       }
     end
   end
