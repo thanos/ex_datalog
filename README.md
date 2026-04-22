@@ -6,6 +6,12 @@ ExDatalog implements bottom-up Datalog evaluation using semi-naive fixpoint
 computation. Programs are built with a declarative builder API, validated,
 compiled to an engine-neutral IR, and evaluated by a pluggable backend.
 
+[![Hex.pm](https://img.shields.io/hexpm/v/ex_datalog.svg)](https://hex.pm/packages/ex_datalog)
+[![Hex.pm](https://img.shields.io/hexpm/dt/ex_datalog.svg)](https://hex.pm/packages/ex_datalog)
+[![Hex.pm](https://img.shields.io/hexpm/l/ex_datalog.svg)](https://hex.pm/packages/ex_datalog)
+[![HexDocs.pm](https://img.shields.io/badge/hex-docs-lightgreen.svg)](https://hexdocs.pm/ex_datalog)
+[![Coverage Status](https://coveralls.io/repos/github/thanos/ex_datalog/badge.svg?branch=main)](https://coveralls.io/github/thanos/ex_datalog?branch=main)
+
 **New to Datalog?** Read the [What is Datalog?](docs/what-is-datalog.md) guide
 for a comprehensive introduction covering history, concepts, industry use cases,
 domain-specific examples (fraud detection, supply chain, social networks,
