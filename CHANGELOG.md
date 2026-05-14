@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2025-05-14
+
+### Added
+
+- Constraint types: type predicates (`type_integer/1`, `type_binary/1`, `type_atom/1`), string predicates (`starts_with/2`, `contains/2`), and membership (`member/2`)
+- Constraint evaluation dispatch via `ExDatalog.Constraint.evaluate/3` with behaviour-based constraint modules
+- `ExDatalog.Constraint.Context` for carrying evaluation metadata (capabilities, provenance)
+- `ExDatalog.Capabilities` struct and merge/satisfies/from_backend API
+- `ExDatalog.Storage.ETS` backend with per-relation ETS tables, wrapped-tuple keys, and concurrent read support
+- Storage behaviour `init/2` for passing backend options (access, write_concurrency, read_concurrency)
+- `ExDatalog.IR.from_term/1` now tags list constants as `{:const, {:list, [...]}}` for uniform IR value representation
+- `ExDatalog.IR.resolve_operand/2` and `ExDatalog.IR.value_to_native/1` shared helpers for constraint evaluation
+- Portability test suite (Map vs ETS) covering transitive closure, arithmetic, comparison, negation, type predicates, and membership
+- Backend conformance macro (`ExDatalog.Storage.BackendConformance`) for shared storage contract tests
+- Engine `storage_opts` option for passing options to storage backends
+- `try/after` resource cleanup in `Engine.Naive` for ETS teardown safety
+- ETS tombstone guard (`guard_not_tombstoned!`) for clear errors on post-teardown operations
+- `Constraint.valid?/1` now requires `{:const, list}` for `:member` right operand
+
+### Changed
+
+- `Storage.ETS.member?/3` now uses `:ets.member/2` (was `:ets.match_object/3`) — correct O(1) lookup
+- `Storage.ETS.init/2` now accepts `write_concurrency` and `read_concurrency` options
+- `Storage.ETS.upsert_index_entry` uses `MapSet` instead of lists for O(log n) membership checks
+- `Storage.ETS.update_index/4` raises `ArgumentError` on unknown relations (was silent no-op)
+- `Storage.Map.update_index/4` raises `ArgumentError` on unknown relations (was silent empty-index)
+- Both backends now report `type_predicates: true` and `string_predicates: true` in capabilities
+- `Constraint.evaluate/3` public-struct clause delegates to IR clause via recursion
+- `IR.from_term({:const, list})` now produces `{:const, {:list, [tagged_elements]}}` instead of `{:const, list}`
+- `IR.from_constraint/1` uses `maybe_from_term/1` pattern matching instead of bare `if`
+- `Constraints.Arithmetic.apply_arithmetic` uses guard clauses with integer checks
+- All constraint modules use shared `IR.resolve_operand/2` and `IR.value_to_native/1` (was 5x duplicated)
+- `Engine.Naive.evaluate/2` wraps evaluation in `try/after` to ensure ETS teardown on exceptions
+- `Storage.ETS.teardown/1` returns `:ok` (was returning stale struct)
+- `Constraint.Context` documented as informational/reserved for v0.2.0
+- Storage behaviour documents indexing callbacks as deferred (not used by default engine)
+
+### Fixed
+
+- `Storage.ETS.member?/3` was using `:ets.match_object/3` instead of `:ets.member/2` — wrong and slower
+- ETS tests "returns same state struct" removed — they enforced a misleading identity invariant
+- `Constraint.valid_right?(:member, ...)` now requires `{:const, list}` — prevents silent runtime filter
+- Capabilities doctest for `from_backend/1` now uses valid Elixir instead of `...` ellipsis
+
 ## [0.1.0] - 2025-04-18
 
 ### Added

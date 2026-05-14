@@ -286,10 +286,13 @@ defmodule ExDatalog.IR do
     %Constraint{
       op: op,
       left: from_term(left),
-      right: if(right != nil, do: from_term(right), else: nil),
-      result: if(result != nil, do: from_term(result), else: nil)
+      right: maybe_from_term(right),
+      result: maybe_from_term(result)
     }
   end
+
+  defp maybe_from_term(nil), do: nil
+  defp maybe_from_term(term), do: from_term(term)
 
   @doc """
   Converts an AST atom to an IR atom.

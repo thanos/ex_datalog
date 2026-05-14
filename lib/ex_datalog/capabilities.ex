@@ -28,8 +28,13 @@ defmodule ExDatalog.Capabilities do
 
       iex> cap1 = %ExDatalog.Capabilities{indexed_lookup: true, concurrent_reads: false}
       iex> cap2 = %ExDatalog.Capabilities{indexed_lookup: false, concurrent_reads: true}
-      iex> ExDatalog.Capabilities.merge(cap1, cap2)
-      %ExDatalog.Capabilities{indexed_lookup: false, concurrent_reads: false, ...}
+      iex> merged = ExDatalog.Capabilities.merge(cap1, cap2)
+      iex> merged.indexed_lookup
+      false
+      iex> merged.concurrent_reads
+      false
+      iex> merged.arithmetic_constraints
+      true
 
   ## Satisfying requirements
 
@@ -135,8 +140,11 @@ defmodule ExDatalog.Capabilities do
   ## Examples
 
       iex> state = ExDatalog.Storage.Map.init(%{"rel" => %{arity: 2, types: [:integer, :string]}})
-      iex> ExDatalog.Capabilities.from_backend({ExDatalog.Storage.Map, state})
-      %ExDatalog.Capabilities{storage_type: :map, indexed_lookup: false, ...}
+      iex> caps = ExDatalog.Capabilities.from_backend({ExDatalog.Storage.Map, state})
+      iex> caps.storage_type
+      :map
+      iex> caps.arithmetic_constraints
+      true
 
   """
   @spec from_backend({module(), term()}) :: t()

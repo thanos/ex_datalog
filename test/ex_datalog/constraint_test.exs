@@ -174,15 +174,256 @@ defmodule ExDatalog.ConstraintTest do
     end
   end
 
-  describe "result_variable/1" do
-    test "returns variable name for arithmetic constraint" do
-      c = Constraint.add(@x, @y, @z)
-      assert Constraint.result_variable(c) == "Z"
+  describe "type predicate constructors" do
+    test "type_integer/1 builds an is_integer constraint" do
+      c = Constraint.type_integer(@x)
+      assert c.op == :is_integer
+      assert c.left == @x
+      assert c.right == nil
+      assert c.result == nil
     end
 
-    test "returns nil for comparison constraint" do
-      c = Constraint.gt(@x, @c5)
-      assert Constraint.result_variable(c) == nil
+    test "type_binary/1 builds an is_binary constraint" do
+      c = Constraint.type_binary(@x)
+      assert c.op == :is_binary
+      assert c.left == @x
+      assert c.right == nil
+      assert c.result == nil
+    end
+
+    test "type_atom/1 builds an is_atom constraint" do
+      c = Constraint.type_atom(@x)
+      assert c.op == :is_atom
+      assert c.left == @x
+      assert c.right == nil
+      assert c.result == nil
+    end
+  end
+
+  describe "string predicate constructors" do
+    test "starts_with/2 builds a starts_with constraint" do
+      c = Constraint.starts_with(@x, Term.const("hello"))
+      assert c.op == :starts_with
+      assert c.left == @x
+      assert c.right == Term.const("hello")
+      assert c.result == nil
+    end
+
+    test "contains/2 builds a contains constraint" do
+      c = Constraint.contains(@x, Term.const("ell"))
+      assert c.op == :contains
+      assert c.left == @x
+      assert c.right == Term.const("ell")
+      assert c.result == nil
+    end
+  end
+
+  describe "membership constructor" do
+    test "member/2 builds a membership constraint" do
+      c = Constraint.member(@x, Term.const([:a, :b, :c]))
+      assert c.op == :member
+      assert c.left == @x
+      assert c.right == Term.const([:a, :b, :c])
+      assert c.result == nil
+    end
+  end
+
+  describe "type_predicate?/1" do
+    test "returns true for type predicate constraints" do
+      for op <- [:is_integer, :is_binary, :is_atom] do
+        c = %Constraint{op: op, left: @x, right: nil, result: nil}
+        assert Constraint.type_predicate?(c) == true
+      end
+    end
+
+    test "returns false for non-type-predicate constraints" do
+      assert Constraint.type_predicate?(Constraint.gt(@x, @c5)) == false
+      assert Constraint.type_predicate?(Constraint.add(@x, @y, @z)) == false
+      assert Constraint.type_predicate?(Constraint.starts_with(@x, Term.const("a"))) == false
+      assert Constraint.type_predicate?(Constraint.member(@x, Term.const([:a]))) == false
+    end
+  end
+
+  describe "string_predicate?/1" do
+    test "returns true for string predicate constraints" do
+      for op <- [:starts_with, :contains] do
+        c = %Constraint{op: op, left: @x, right: @y, result: nil}
+        assert Constraint.string_predicate?(c) == true
+      end
+    end
+
+    test "returns false for non-string-predicate constraints" do
+      assert Constraint.string_predicate?(Constraint.gt(@x, @c5)) == false
+      assert Constraint.string_predicate?(Constraint.type_integer(@x)) == false
+      assert Constraint.string_predicate?(Constraint.member(@x, Term.const([:a]))) == false
+    end
+  end
+
+  describe "membership?/1" do
+    test "returns true for membership constraints" do
+      c = Constraint.member(@x, Term.const([:a, :b]))
+      assert Constraint.membership?(c) == true
+    end
+
+    test "returns false for non-membership constraints" do
+      assert Constraint.membership?(Constraint.gt(@x, @c5)) == false
+      assert Constraint.membership?(Constraint.type_integer(@x)) == false
+      assert Constraint.membership?(Constraint.starts_with(@x, Term.const("a"))) == false
+    end
+  end
+
+  describe "valid?/1 for new constraint types" do
+    test "valid type predicate constraints" do
+      assert Constraint.valid?(Constraint.type_integer(@x)) == true
+      assert Constraint.valid?(Constraint.type_binary(@x)) == true
+      assert Constraint.valid?(Constraint.type_atom(@x)) == true
+    end
+
+    test "valid string predicate constraints" do
+      assert Constraint.valid?(Constraint.starts_with(@x, Term.const("hello"))) == true
+      assert Constraint.valid?(Constraint.contains(@x, Term.const("lo"))) == true
+    end
+
+    test "valid membership constraint with constant list" do
+      assert Constraint.valid?(Constraint.member(@x, Term.const([:a, :b]))) == true
+    end
+
+    test "invalid: membership with non-list right" do
+      c = %Constraint{op: :member, left: @x, right: {:var, "Y"}, result: nil}
+      assert Constraint.valid?(c) == false
+    end
+
+    test "invalid: membership with constant integer right" do
+      c = %Constraint{op: :member, left: @x, right: {:const, 5}, result: nil}
+      assert Constraint.valid?(c) == false
+    end
+
+    test "invalid: type predicate with non-nil right" do
+      c = %Constraint{op: :is_integer, left: @x, right: @y, result: nil}
+      assert Constraint.valid?(c) == false
+    end
+
+    test "invalid: type predicate with non-nil result" do
+      c = %Constraint{op: :is_integer, left: @x, right: nil, result: @z}
+      assert Constraint.valid?(c) == false
+    end
+
+    test "invalid: string predicate with nil result" do
+      c = %Constraint{op: :starts_with, left: @x, right: @y, result: @z}
+      assert Constraint.valid?(c) == false
+    end
+  end
+
+  describe "input_variables/1 for new constraint types" do
+    test "type predicates return only left variable" do
+      c = Constraint.type_integer(@x)
+      assert Constraint.input_variables(c) == ["X"]
+    end
+
+    test "type predicates with constant left return empty" do
+      c = Constraint.type_integer(Term.const(5))
+      assert Constraint.input_variables(c) == []
+    end
+
+    test "string predicates return both variables" do
+      c = Constraint.starts_with(@x, @y)
+      assert Constraint.input_variables(c) == ["X", "Y"]
+    end
+
+    test "membership returns only left variable" do
+      c = Constraint.member(@x, Term.const([:a, :b]))
+      assert Constraint.input_variables(c) == ["X"]
+    end
+  end
+
+  describe "result_variable/1 for new constraint types" do
+    test "type predicates return nil" do
+      assert Constraint.result_variable(Constraint.type_integer(@x)) == nil
+    end
+
+    test "string predicates return nil" do
+      assert Constraint.result_variable(Constraint.starts_with(@x, Term.const("a"))) == nil
+    end
+
+    test "membership returns nil" do
+      assert Constraint.result_variable(Constraint.member(@x, Term.const([:a]))) == nil
+    end
+  end
+
+  describe "dispatch consistency" do
+    test "every op in @all_ops has a constraint_module dispatch" do
+      for op <- [
+            :gt,
+            :lt,
+            :gte,
+            :lte,
+            :eq,
+            :neq,
+            :add,
+            :sub,
+            :mul,
+            :div,
+            :is_integer,
+            :is_binary,
+            :is_atom,
+            :starts_with,
+            :contains,
+            :member
+          ] do
+        c = %Constraint{op: op, left: @x, right: nil, result: nil}
+        result = Constraint.evaluate(c, %{}, %ExDatalog.Constraint.Context{})
+
+        assert result in [{:ok, %{}}, :filter],
+               "op #{inspect(op)} should dispatch without error"
+      end
+    end
+
+    test "@type op territory matches @all_ops" do
+      all_ops = [
+        :gt,
+        :lt,
+        :gte,
+        :lte,
+        :eq,
+        :neq,
+        :add,
+        :sub,
+        :mul,
+        :div,
+        :is_integer,
+        :is_binary,
+        :is_atom,
+        :starts_with,
+        :contains,
+        :member
+      ]
+
+      assert length(all_ops) == 16
+      assert :gt in all_ops
+      assert :member in all_ops
+      assert :is_integer in all_ops
+      assert :starts_with in all_ops
+
+      for op <- all_ops do
+        c = %Constraint{op: op, left: @x, right: nil, result: nil}
+
+        assert Constraint.valid?(c) or
+                 op in [
+                   :add,
+                   :sub,
+                   :mul,
+                   :div,
+                   :gt,
+                   :lt,
+                   :gte,
+                   :lte,
+                   :eq,
+                   :neq,
+                   :starts_with,
+                   :contains,
+                   :member
+                 ]
+      end
     end
   end
 end

@@ -1,5 +1,6 @@
 defmodule ExDatalog.CapabilitiesTest do
   use ExUnit.Case, async: true
+  doctest ExDatalog.Capabilities
 
   alias ExDatalog.Capabilities
   alias ExDatalog.Storage.ETS

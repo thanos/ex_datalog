@@ -40,21 +40,23 @@ defmodule ExDatalog.Constraints.Arithmetic do
     end
   end
 
-  defp apply_arithmetic(op, left, right, {:var, result_name}, binding) do
-    computed =
-      case op do
-        :add -> {:ok, left + right}
-        :sub -> {:ok, left - right}
-        :mul -> {:ok, left * right}
-        :div when right == 0 -> :div_by_zero
-        :div -> {:ok, div(left, right)}
-      end
+  defp apply_arithmetic(:add, left, right, {:var, name}, binding)
+       when is_integer(left) and is_integer(right),
+       do: {:ok, Map.put(binding, name, left + right)}
 
-    case computed do
-      {:ok, value} -> {:ok, Map.put(binding, result_name, value)}
-      :div_by_zero -> :filter
-    end
-  end
+  defp apply_arithmetic(:sub, left, right, {:var, name}, binding)
+       when is_integer(left) and is_integer(right),
+       do: {:ok, Map.put(binding, name, left - right)}
+
+  defp apply_arithmetic(:mul, left, right, {:var, name}, binding)
+       when is_integer(left) and is_integer(right),
+       do: {:ok, Map.put(binding, name, left * right)}
+
+  defp apply_arithmetic(:div, _left, 0, {:var, _name}, _binding), do: :filter
+
+  defp apply_arithmetic(:div, left, right, {:var, name}, binding)
+       when is_integer(left) and is_integer(right),
+       do: {:ok, Map.put(binding, name, div(left, right))}
 
   defp apply_arithmetic(_op, _left, _right, _result, _binding), do: :filter
 end
