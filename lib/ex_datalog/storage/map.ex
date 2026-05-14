@@ -4,8 +4,9 @@ defmodule ExDatalog.Storage.Map do
 
   This is the default storage backend. It uses immutable Elixir data structures
   (Maps and MapSets) which are thread-safe and easy to inspect, but may suffer
-  GC pressure for very large fact sets (>100K tuples). An ETS-based
-  implementation (`Storage.ETS`) is planned for Phase 8.
+  GC pressure for very large fact sets (>100K tuples). For workloads exceeding
+  100K facts, use `Storage.ETS` which provides off-heap storage and better
+  concurrent read scalability.
 
   ## Internal structure
 
@@ -132,21 +133,34 @@ defmodule ExDatalog.Storage.Map do
   end
 
   @doc """
-  Returns all tuples in a relation as a list.
+  Returns all tuples in a relation as a deterministically sorted list.
 
   Used by the engine to iterate over a relation's facts during join
   evaluation. Returns `[]` if `relation` is unknown.
+
+  The output is sorted to guarantee deterministic iteration order regardless
+  of the underlying data structure's internal ordering. This ensures that
+  identical programs with identical facts produce identical results across
+  all storage backends.
   """
   @impl ExDatalog.Storage
   @spec stream(t(), ExDatalog.Storage.relation_name()) :: Enumerable.t()
   def stream(%__MODULE__{relations: rels}, relation) do
     case Map.fetch(rels, relation) do
-      {:ok, set} -> MapSet.to_list(set)
+      {:ok, set} -> set |> MapSet.to_list() |> Enum.sort()
       :error -> []
     end
   end
 
-  @doc false
+  @doc """
+  Retrieves tuples matching an indexed key.
+
+  Returns tuples from a pre-built index that match the given `key` on the
+  specified `columns`. Returns `[]` if the index or key does not exist.
+
+  Must call `build_index/3` before calling `get_indexed/4` for the same
+  relation and columns.
+  """
   @impl ExDatalog.Storage
   @spec get_indexed(
           t(),
@@ -168,7 +182,12 @@ defmodule ExDatalog.Storage.Map do
     end
   end
 
-  @doc false
+  @doc """
+  Builds a hash index on the specified columns for a relation.
+
+  Creates a lookup structure mapping projected column values to sets of
+  tuples. Raises `ArgumentError` if `relation` is not in the schema.
+  """
   @impl ExDatalog.Storage
   @spec build_index(t(), ExDatalog.Storage.relation_name(), ExDatalog.Storage.index_key()) :: t()
   def build_index(%__MODULE__{relations: rels, indexes: indexes} = state, relation, columns) do
@@ -182,7 +201,12 @@ defmodule ExDatalog.Storage.Map do
     end
   end
 
-  @doc false
+  @doc """
+  Incrementally merges delta tuples into an existing index.
+
+  If no index exists for the given relation and columns, one is built from
+  the current relation data first, then the delta is merged in.
+  """
   @impl ExDatalog.Storage
   @spec update_index(
           t(),
@@ -229,6 +253,39 @@ defmodule ExDatalog.Storage.Map do
   def relations(%__MODULE__{schemas: schemas}) do
     schemas |> Map.keys() |> Enum.sort()
   end
+
+  @doc """
+  Returns the capabilities of this storage backend.
+
+  The Map backend supports arithmetic and comparison constraints, provenance,
+  but does not support indexed lookup or concurrent reads. It uses on-heap
+  immutable Elixir data structures.
+  """
+  @impl ExDatalog.Storage
+  @spec capabilities(t()) :: ExDatalog.Capabilities.t()
+  def capabilities(%__MODULE__{}) do
+    %ExDatalog.Capabilities{
+      storage_type: :map,
+      indexed_lookup: false,
+      concurrent_reads: false,
+      arithmetic_constraints: true,
+      comparison_constraints: true,
+      type_predicates: false,
+      string_predicates: false,
+      provenance: true,
+      external_execution: false
+    }
+  end
+
+  @doc """
+  Releases resources held by this storage backend.
+
+  For the Map backend, this is a no-op since all data is held in immutable
+  Elixir data structures that are garbage-collected automatically.
+  """
+  @impl ExDatalog.Storage
+  @spec teardown(t()) :: :ok
+  def teardown(%__MODULE__{}), do: :ok
 
   # Builds a column-indexed lookup: %{composite_key => MapSet.t(tuple)}.
   # Used by build_index (full rebuild) and as the fallback in update_index

@@ -60,7 +60,7 @@ defmodule ExDatalog.Storage.MapTest do
   end
 
   describe "stream/2" do
-    test "returns all tuples for a relation" do
+    test "returns all tuples for a relation in sorted order" do
       state = Map.init(@schemas)
       state = Map.insert_many(state, "parent", [{:alice, :bob}, {:carol, :dave}])
       tuples = Map.stream(state, "parent")
@@ -72,6 +72,15 @@ defmodule ExDatalog.Storage.MapTest do
     test "returns empty list for empty relation" do
       state = Map.init(@schemas)
       assert Map.stream(state, "parent") == []
+    end
+
+    test "returns deterministically sorted output" do
+      state = Map.init(@schemas)
+
+      state =
+        Map.insert_many(state, "parent", [{:z, :a}, {:a, :z}, {:m, :m}])
+
+      assert Map.stream(state, "parent") == [{:a, :z}, {:m, :m}, {:z, :a}]
     end
   end
 
@@ -166,6 +175,27 @@ defmodule ExDatalog.Storage.MapTest do
     test "returns false for unknown relation" do
       state = Map.init(@schemas)
       refute Map.member?(state, "nonexistent", {:a, :b})
+    end
+  end
+
+  describe "capabilities/1" do
+    test "returns capabilities with map storage type" do
+      state = Map.init(@schemas)
+      caps = Map.capabilities(state)
+      assert %ExDatalog.Capabilities{} = caps
+      assert caps.storage_type == :map
+      assert caps.indexed_lookup == false
+      assert caps.concurrent_reads == false
+      assert caps.arithmetic_constraints == true
+      assert caps.comparison_constraints == true
+      assert caps.provenance == true
+    end
+  end
+
+  describe "teardown/1" do
+    test "returns :ok for map backend" do
+      state = Map.init(@schemas)
+      assert Map.teardown(state) == :ok
     end
   end
 end
