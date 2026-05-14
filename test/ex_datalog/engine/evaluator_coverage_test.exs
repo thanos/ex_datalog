@@ -290,7 +290,7 @@ defmodule ExDatalog.Engine.EvaluatorTest.Coverage do
          %IR.Constraint{
            op: :member,
            left: {:var, "X"},
-           right: {:const, [:red, :green, :blue]},
+           right: {:const, {:list, [{:atom, :red}, {:atom, :green}, {:atom, :blue}]}},
            result: nil
          }}
       ]

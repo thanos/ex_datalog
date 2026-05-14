@@ -142,20 +142,21 @@ defmodule ExDatalog.Storage.ETSTest do
     end
   end
 
-  describe "insert returns same state (mutation in place)" do
-    test "insert/3 returns the same state struct" do
+  describe "insert mutates ETS tables in place" do
+    test "insert/3 makes tuple immediately visible via member?" do
       state = ETS.init(@schemas)
-      state2 = ETS.insert(state, "parent", {:alice, :bob})
-      assert state2 == state
-      assert ETS.size(state, "parent") == 1
+      state = ETS.insert(state, "parent", {:alice, :bob})
+      assert ETS.member?(state, "parent", {:alice, :bob})
+      refute ETS.member?(state, "parent", {:alice, :carol})
       ETS.teardown(state)
     end
 
-    test "insert_many/3 returns the same state struct" do
+    test "insert_many/3 makes all tuples immediately visible" do
       state = ETS.init(@schemas)
-      state2 = ETS.insert_many(state, "parent", [{:a, :b}, {:c, :d}])
-      assert state2 == state
+      state = ETS.insert_many(state, "parent", [{:a, :b}, {:c, :d}])
       assert ETS.size(state, "parent") == 2
+      assert ETS.member?(state, "parent", {:a, :b})
+      assert ETS.member?(state, "parent", {:c, :d})
       ETS.teardown(state)
     end
   end

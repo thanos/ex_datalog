@@ -10,7 +10,7 @@ defmodule ExDatalog.Constraints.Type do
   @behaviour ExDatalog.Constraint
 
   alias ExDatalog.Constraint.Context
-  alias ExDatalog.IR.Constraint
+  alias ExDatalog.IR
 
   @impl ExDatalog.Constraint
   @doc """
@@ -20,10 +20,10 @@ defmodule ExDatalog.Constraints.Type do
   `{:ok, binding}` (unchanged) when the type check passes, or `:filter`
   when it fails or the input variable is unbound.
   """
-  @spec evaluate(Constraint.t(), map(), Context.t()) ::
+  @spec evaluate(IR.Constraint.t(), map(), Context.t()) ::
           {:ok, map()} | :filter
-  def evaluate(%Constraint{op: op, left: left}, binding, _context) do
-    case resolve_operand(left, binding) do
+  def evaluate(%IR.Constraint{op: op, left: left}, binding, _context) do
+    case IR.resolve_operand(left, binding) do
       {:ok, value} ->
         if type_check(op, value), do: {:ok, binding}, else: :filter
 
@@ -32,24 +32,7 @@ defmodule ExDatalog.Constraints.Type do
     end
   end
 
-  defp resolve_operand({:var, name}, binding) do
-    case Map.fetch(binding, name) do
-      {:ok, value} -> {:ok, value}
-      :error -> :unbound
-    end
-  end
-
-  defp resolve_operand({:const, ir_value}, _binding) do
-    {:ok, ir_value_to_native(ir_value)}
-  end
-
-  defp resolve_operand(:wildcard, _binding), do: :unbound
-
   defp type_check(:is_integer, v), do: is_integer(v)
   defp type_check(:is_binary, v), do: is_binary(v)
   defp type_check(:is_atom, v), do: is_atom(v)
-
-  defp ir_value_to_native({:int, n}), do: n
-  defp ir_value_to_native({:str, s}), do: s
-  defp ir_value_to_native({:atom, a}), do: a
 end

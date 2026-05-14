@@ -3,12 +3,17 @@ defmodule ExDatalog.Constraint.Context do
   Evaluation context passed to constraint implementations.
 
   The context carries metadata about the current evaluation environment,
-  including backend capabilities and provenance tracking settings. Constraint
-  implementations can inspect the context to make decisions about evaluation
-  (e.g., a future Z3 constraint might check `external_execution` capability).
+  including backend capabilities and provenance tracking settings.
 
-  For v0.2.0, the context is informational — no constraint implementation
-  branches on it. It is reserved for future use.
+  ## v0.2.0 status
+
+  For v0.2.0, the context is **informational only** — no constraint
+  implementation reads from it. It is reserved for future constraint types
+  that may need to inspect capabilities (e.g., a future Z3 backend checking
+  `external_execution`) or provenance metadata.
+
+  Do not remove this module: it is part of the public `Constraint.evaluate/3`
+  signature and will be used in a future release.
   """
 
   alias ExDatalog.Capabilities

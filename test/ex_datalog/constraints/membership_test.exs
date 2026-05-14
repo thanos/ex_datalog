@@ -10,7 +10,7 @@ defmodule ExDatalog.Constraints.MembershipTest do
       c = %Constraint{
         op: :member,
         left: {:var, "X"},
-        right: {:const, [:a, :b, :c]},
+        right: {:const, {:list, [{:atom, :a}, {:atom, :b}, {:atom, :c}]}},
         result: nil
       }
 
@@ -21,7 +21,7 @@ defmodule ExDatalog.Constraints.MembershipTest do
       c = %Constraint{
         op: :member,
         left: {:var, "X"},
-        right: {:const, [:a, :b, :c]},
+        right: {:const, {:list, [{:atom, :a}, {:atom, :b}, {:atom, :c}]}},
         result: nil
       }
 
@@ -32,7 +32,7 @@ defmodule ExDatalog.Constraints.MembershipTest do
       c = %Constraint{
         op: :member,
         left: {:var, "X"},
-        right: {:const, [1, 2, 3]},
+        right: {:const, {:list, [{:int, 1}, {:int, 2}, {:int, 3}]}},
         result: nil
       }
 
@@ -43,7 +43,7 @@ defmodule ExDatalog.Constraints.MembershipTest do
       c = %Constraint{
         op: :member,
         left: {:var, "X"},
-        right: {:const, ["foo", "bar"]},
+        right: {:const, {:list, [{:str, "foo"}, {:str, "bar"}]}},
         result: nil
       }
 
@@ -54,7 +54,7 @@ defmodule ExDatalog.Constraints.MembershipTest do
       c = %Constraint{
         op: :member,
         left: {:var, "X"},
-        right: {:const, [:a, :b]},
+        right: {:const, {:list, [{:atom, :a}, {:atom, :b}]}},
         result: nil
       }
 
@@ -65,7 +65,7 @@ defmodule ExDatalog.Constraints.MembershipTest do
       c = %Constraint{
         op: :member,
         left: {:const, {:atom, :d}},
-        right: {:const, [:a, :b, :c]},
+        right: {:const, {:list, [{:atom, :a}, {:atom, :b}, {:atom, :c}]}},
         result: nil
       }
 
@@ -76,7 +76,7 @@ defmodule ExDatalog.Constraints.MembershipTest do
       c = %Constraint{
         op: :member,
         left: {:const, {:atom, :a}},
-        right: {:const, [:a, :b, :c]},
+        right: {:const, {:list, [{:atom, :a}, {:atom, :b}, {:atom, :c}]}},
         result: nil
       }
 
@@ -100,7 +100,7 @@ defmodule ExDatalog.Constraints.MembershipTest do
       c = %Constraint{
         op: :member,
         left: :wildcard,
-        right: {:const, [:a, :b]},
+        right: {:const, {:list, [{:atom, :a}, {:atom, :b}]}},
         result: nil
       }
 

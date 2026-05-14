@@ -68,19 +68,36 @@ defmodule ExDatalog.Storage.ETS do
 
   - `:access` — `:private` (default) or `:public`. When `:public`,
     `:read_concurrency` is enabled for concurrent read workloads.
+  - `:write_concurrency` — `boolean` (default: `false`). When `true`,
+    `:write_concurrency` is enabled on each ETS table.
   """
   @impl ExDatalog.Storage
+  @spec init(ExDatalog.Storage.schemas()) :: t()
+  def init(schemas), do: init(schemas, [])
+
   @spec init(ExDatalog.Storage.schemas(), keyword()) :: t()
-  def init(schemas, opts \\ []) do
+  def init(schemas, opts) do
     access = Keyword.get(opts, :access, :private)
-    options = Keyword.put_new(opts, :access, access)
+    write_concurrency = Keyword.get(opts, :write_concurrency, false)
+    read_concurrency = Keyword.get(opts, :read_concurrency, access == :public)
+
+    options = [
+      access: access,
+      write_concurrency: write_concurrency,
+      read_concurrency: read_concurrency
+    ]
 
     tables =
       schemas
       |> Map.keys()
       |> Map.new(fn name ->
-        read_concurrency = access == :public
-        table_opts = [:set, access, read_concurrency: read_concurrency]
+        table_opts = [
+          :set,
+          access,
+          read_concurrency: read_concurrency,
+          write_concurrency: write_concurrency
+        ]
+
         ref = :ets.new(:ex_datalog_ets, table_opts)
         {name, ref}
       end)
@@ -100,6 +117,8 @@ defmodule ExDatalog.Storage.ETS do
   @impl ExDatalog.Storage
   @spec insert(t(), ExDatalog.Storage.relation_name(), ExDatalog.Storage.tuple_values()) :: t()
   def insert(%__MODULE__{tables: tables} = state, relation, tuple) do
+    guard_not_tombstoned!(state)
+
     case Map.fetch(tables, relation) do
       {:ok, ref} ->
         :ets.insert(ref, {tuple})
@@ -121,6 +140,8 @@ defmodule ExDatalog.Storage.ETS do
   @impl ExDatalog.Storage
   @spec insert_many(t(), ExDatalog.Storage.relation_name(), Enumerable.t()) :: t()
   def insert_many(%__MODULE__{tables: tables} = state, relation, tuples) do
+    guard_not_tombstoned!(state)
+
     case Map.fetch(tables, relation) do
       {:ok, ref} ->
         Enum.each(tuples, fn tuple -> :ets.insert(ref, {tuple}) end)
@@ -134,24 +155,19 @@ defmodule ExDatalog.Storage.ETS do
   @doc """
   Checks whether a tuple exists in a relation.
 
-  Uses a match specification for O(1) lookup by the wrapped tuple key.
+  Uses `:ets.member/2` for O(1) lookup by the wrapped tuple key.
   Returns `true` if the exact tuple is present, `false` otherwise.
   Returns `false` if `relation` is unknown.
   """
   @impl ExDatalog.Storage
   @spec member?(t(), ExDatalog.Storage.relation_name(), ExDatalog.Storage.tuple_values()) ::
           boolean()
-  def member?(%__MODULE__{tables: tables}, relation, tuple) do
-    case Map.fetch(tables, relation) do
-      {:ok, ref} ->
-        case :ets.match_object(ref, {tuple}, 1) do
-          {[{^tuple}], _} -> true
-          {[], _} -> false
-          :"$end_of_table" -> false
-        end
+  def member?(%__MODULE__{tables: tables} = state, relation, tuple) do
+    guard_not_tombstoned!(state)
 
-      :error ->
-        false
+    case Map.fetch(tables, relation) do
+      {:ok, ref} -> :ets.member(ref, tuple)
+      :error -> false
     end
   end
 
@@ -162,7 +178,9 @@ defmodule ExDatalog.Storage.ETS do
   """
   @impl ExDatalog.Storage
   @spec size(t(), ExDatalog.Storage.relation_name()) :: non_neg_integer()
-  def size(%__MODULE__{tables: tables}, relation) do
+  def size(%__MODULE__{tables: tables} = state, relation) do
+    guard_not_tombstoned!(state)
+
     case Map.fetch(tables, relation) do
       {:ok, ref} -> :ets.info(ref, :size)
       :error -> 0
@@ -178,7 +196,9 @@ defmodule ExDatalog.Storage.ETS do
   """
   @impl ExDatalog.Storage
   @spec stream(t(), ExDatalog.Storage.relation_name()) :: Enumerable.t()
-  def stream(%__MODULE__{tables: tables}, relation) do
+  def stream(%__MODULE__{tables: tables} = state, relation) do
+    guard_not_tombstoned!(state)
+
     case Map.fetch(tables, relation) do
       {:ok, ref} ->
         ref
@@ -208,11 +228,13 @@ defmodule ExDatalog.Storage.ETS do
           ExDatalog.Storage.key_values()
         ) ::
           Enumerable.t()
-  def get_indexed(%__MODULE__{indexes: indexes}, relation, columns, key) do
+  def get_indexed(%__MODULE__{indexes: indexes} = state, relation, columns, key) do
+    guard_not_tombstoned!(state)
+
     case Map.fetch(indexes, {relation, columns}) do
       {:ok, index_ref} ->
         case :ets.lookup(index_ref, key) do
-          [{^key, tuples}] -> Enum.sort(tuples)
+          [{^key, tuples_set}] -> tuples_set |> MapSet.to_list() |> Enum.sort()
           [] -> []
         end
 
@@ -230,13 +252,15 @@ defmodule ExDatalog.Storage.ETS do
   @impl ExDatalog.Storage
   @spec build_index(t(), ExDatalog.Storage.relation_name(), ExDatalog.Storage.index_key()) :: t()
   def build_index(%__MODULE__{tables: tables, indexes: indexes} = state, relation, columns) do
+    guard_not_tombstoned!(state)
+
     case Map.fetch(tables, relation) do
       {:ok, ref} ->
         index_data = build_index_from_table(ref, columns)
         index_ref = :ets.new(:ex_datalog_index, [:set, :private])
 
-        Enum.each(index_data, fn {key, tuples} ->
-          :ets.insert(index_ref, {key, tuples})
+        Enum.each(index_data, fn {key, tuples_set} ->
+          :ets.insert(index_ref, {key, tuples_set})
         end)
 
         %{state | indexes: Map.put(indexes, {relation, columns}, index_ref)}
@@ -251,6 +275,8 @@ defmodule ExDatalog.Storage.ETS do
 
   If no index exists for the given relation and columns, one is built from
   the current relation data first, then the delta is merged in.
+
+  Raises `ArgumentError` if `relation` is not in the schema.
   """
   @impl ExDatalog.Storage
   @spec update_index(
@@ -265,17 +291,20 @@ defmodule ExDatalog.Storage.ETS do
         columns,
         delta
       ) do
+    guard_not_tombstoned!(state)
     key = {relation, columns}
 
-    index_ref =
-      resolve_index_ref(indexes, tables, relation, columns)
+    {index_ref, updated_indexes} =
+      case Map.fetch(indexes, key) do
+        {:ok, ref} ->
+          {ref, indexes}
 
-    if index_ref == nil do
-      state
-    else
-      merge_delta_into_index(index_ref, delta, columns)
-      %{state | indexes: Map.put(indexes, key, index_ref)}
-    end
+        :error ->
+          build_or_raise_index(tables, indexes, key, relation, columns)
+      end
+
+    merge_delta_into_index(index_ref, delta, columns)
+    %{state | indexes: updated_indexes}
   end
 
   @doc """
@@ -305,8 +334,8 @@ defmodule ExDatalog.Storage.ETS do
       concurrent_reads: concurrent_reads,
       arithmetic_constraints: true,
       comparison_constraints: true,
-      type_predicates: false,
-      string_predicates: false,
+      type_predicates: true,
+      string_predicates: true,
       provenance: true,
       external_execution: false
     }
@@ -316,7 +345,9 @@ defmodule ExDatalog.Storage.ETS do
   Deletes all ETS tables owned by this storage backend.
 
   Must be called when evaluation completes to release ETS table resources.
-  After `teardown/1`, the state should not be used further.
+  After `teardown/1`, the state is tombstoned — subsequent operations will
+  raise `ArgumentError` with a clear message rather than crashing with
+  opaque `:badarg` from the deleted ETS tables.
 
   This function is idempotent — calling it twice does not raise an error.
   """
@@ -334,31 +365,6 @@ defmodule ExDatalog.Storage.ETS do
     :ok
   end
 
-  defp resolve_index_ref(indexes, tables, relation, columns) do
-    key = {relation, columns}
-
-    case Map.fetch(indexes, key) do
-      {:ok, ref} ->
-        ref
-
-      :error ->
-        build_new_index_ref(tables, relation, columns)
-    end
-  end
-
-  defp build_new_index_ref(tables, relation, columns) do
-    case Map.fetch(tables, relation) do
-      {:ok, ref} ->
-        index_data = build_index_from_table(ref, columns)
-        new_ref = :ets.new(:ex_datalog_index, [:set, :private])
-        Enum.each(index_data, fn {k, tuples} -> :ets.insert(new_ref, {k, tuples}) end)
-        new_ref
-
-      :error ->
-        nil
-    end
-  end
-
   defp merge_delta_into_index(index_ref, delta, columns) do
     Enum.each(delta, fn tuple ->
       k = project_tuple(tuple, columns)
@@ -368,13 +374,13 @@ defmodule ExDatalog.Storage.ETS do
 
   defp upsert_index_entry(index_ref, key, tuple) do
     case :ets.lookup(index_ref, key) do
-      [{^key, existing}] ->
-        unless tuple in existing do
-          :ets.insert(index_ref, {key, existing ++ [tuple]})
+      [{^key, existing_set}] ->
+        unless MapSet.member?(existing_set, tuple) do
+          :ets.insert(index_ref, {key, MapSet.put(existing_set, tuple)})
         end
 
       [] ->
-        :ets.insert(index_ref, {key, [tuple]})
+        :ets.insert(index_ref, {key, MapSet.new([tuple])})
     end
   end
 
@@ -383,11 +389,39 @@ defmodule ExDatalog.Storage.ETS do
     |> :ets.tab2list()
     |> Enum.map(fn {tuple} -> tuple end)
     |> Enum.group_by(&project_tuple(&1, columns))
+    |> Map.new(fn {k, tuples} -> {k, MapSet.new(tuples)} end)
   end
 
   defp project_tuple(tuple, columns) do
     columns
     |> Enum.map(&elem(tuple, &1))
     |> List.to_tuple()
+  end
+
+  defp guard_not_tombstoned!(%__MODULE__{tables: tables}) do
+    case Map.values(tables) do
+      [] ->
+        raise ArgumentError, "ETS storage has no tables — not initialized or already torn down"
+
+      [ref | _] ->
+        if :ets.info(ref, :name) == :undefined do
+          raise ArgumentError, "ETS storage has been torn down and cannot be used"
+        end
+
+        :ok
+    end
+  end
+
+  defp build_or_raise_index(tables, indexes, key, relation, columns) do
+    case Map.fetch(tables, relation) do
+      {:ok, ref} ->
+        index_data = build_index_from_table(ref, columns)
+        new_ref = :ets.new(:ex_datalog_index, [:set, :private])
+        Enum.each(index_data, fn {k, tuples} -> :ets.insert(new_ref, {k, tuples}) end)
+        {new_ref, Map.put(indexes, key, new_ref)}
+
+      :error ->
+        raise ArgumentError, "unknown relation #{inspect(relation)}"
+    end
   end
 end

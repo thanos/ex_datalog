@@ -559,9 +559,10 @@ defmodule ExDatalog.Constraint do
 
   defp valid_right?(op, nil) when op in @type_ops, do: true
 
+  defp valid_right?(:member, {:const, value}) when is_list(value), do: true
+
   defp valid_right?(op, right)
-       when op in @comparison_ops or op in @arithmetic_ops or op in @string_ops or
-              op in @membership_ops,
+       when op in @comparison_ops or op in @arithmetic_ops or op in @string_ops,
        do: Term.valid?(right)
 
   defp valid_right?(_, _), do: false
@@ -610,8 +611,7 @@ defmodule ExDatalog.Constraint do
           {:ok, map()} | :filter
   def evaluate(%__MODULE__{} = constraint, binding, context) do
     ir_constraint = ExDatalog.IR.from_constraint(constraint)
-    module = constraint_module(ir_constraint.op)
-    module.evaluate(ir_constraint, binding, context)
+    evaluate(ir_constraint, binding, context)
   end
 
   def evaluate(%ExDatalog.IR.Constraint{op: op} = constraint, binding, context) do

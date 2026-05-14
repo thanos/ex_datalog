@@ -16,6 +16,7 @@ defmodule ExDatalog.Storage do
   - `relations/1` lists all relation names in sorted order.
   - `capabilities/1` returns the backend's capability metadata.
   - `teardown/1` releases backend resources (e.g., ETS tables).
+  After `teardown/1`, the state must not be used for further operations.
 
   ## Indexing
 
@@ -24,8 +25,10 @@ defmodule ExDatalog.Storage do
   and future use:
 
   - `build_index/3` creates a hash index on the specified columns.
+    Raises `ArgumentError` if `relation` is not in the schema.
   - `get_indexed/4` retrieves tuples matching a key via a pre-built index.
   - `update_index/4` incrementally merges delta tuples into an existing index.
+    Raises `ArgumentError` if `relation` is not in the schema.
 
   `Engine.Naive` uses sequential-scan joins (`Join.join/3`) exclusively. Index
   support will be wired into the evaluator in a future release.

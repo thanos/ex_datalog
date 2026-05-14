@@ -37,9 +37,10 @@ defmodule ExDatalog.IR do
 
   @type ir_type :: :integer | :string | :atom | :any
 
-  @type ir_value :: {:int, integer()} | {:str, String.t()} | {:atom, atom()} | list()
+  @type ir_value ::
+          {:int, integer()} | {:str, String.t()} | {:atom, atom()} | {:list, [ir_value()]}
 
-  @type ir_term :: {:var, String.t()} | {:const, ir_value()} | {:const, list()} | :wildcard
+  @type ir_term :: {:var, String.t()} | {:const, ir_value()} | :wildcard
 
   @type ir_constraint :: %ExDatalog.IR.Constraint{
           op: ExDatalog.Constraint.op(),
@@ -267,8 +268,15 @@ defmodule ExDatalog.IR do
   def from_term({:const, value}) when is_integer(value), do: {:const, {:int, value}}
   def from_term({:const, value}) when is_binary(value), do: {:const, {:str, value}}
   def from_term({:const, value}) when is_atom(value), do: {:const, {:atom, value}}
-  def from_term({:const, value}) when is_list(value), do: {:const, value}
+
+  def from_term({:const, value}) when is_list(value),
+    do: {:const, {:list, Enum.map(value, &tag_const_value/1)}}
+
   def from_term(:wildcard), do: :wildcard
+
+  defp tag_const_value(v) when is_integer(v), do: {:int, v}
+  defp tag_const_value(v) when is_binary(v), do: {:str, v}
+  defp tag_const_value(v) when is_atom(v), do: {:atom, v}
 
   @doc """
   Converts an AST constraint to an IR constraint.
@@ -290,4 +298,38 @@ defmodule ExDatalog.IR do
   def from_atom(%ExDatalog.Atom{relation: relation, terms: terms}) do
     %Atom{relation: relation, terms: Enum.map(terms, &from_term/1)}
   end
+
+  @doc """
+  Resolves an IR term against a binding environment.
+
+  Returns `{:ok, native_value}` if the term is a constant or a bound variable,
+  or `:unbound` if the term is a variable not present in the binding.
+  """
+  @spec resolve_operand(ir_term(), map()) :: {:ok, term()} | :unbound
+  def resolve_operand({:var, name}, binding) do
+    case Map.fetch(binding, name) do
+      {:ok, value} -> {:ok, value}
+      :error -> :unbound
+    end
+  end
+
+  def resolve_operand({:const, ir_value}, _binding) do
+    {:ok, value_to_native(ir_value)}
+  end
+
+  def resolve_operand(:wildcard, _binding), do: :unbound
+
+  @doc """
+  Converts a tagged IR value to its native Elixir representation.
+
+  - `{:int, n}` → `n`
+  - `{:str, s}` → `s`
+  - `{:atom, a}` → `a`
+  - `{:list, elements}` → `elements` (each element is recursively converted)
+  """
+  @spec value_to_native(ir_value()) :: term()
+  def value_to_native({:int, n}), do: n
+  def value_to_native({:str, s}), do: s
+  def value_to_native({:atom, a}), do: a
+  def value_to_native({:list, elements}), do: Enum.map(elements, &value_to_native/1)
 end

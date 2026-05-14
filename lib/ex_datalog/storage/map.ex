@@ -55,7 +55,10 @@ defmodule ExDatalog.Storage.Map do
   """
   @impl ExDatalog.Storage
   @spec init(ExDatalog.Storage.schemas()) :: t()
-  def init(schemas) do
+  def init(schemas), do: init(schemas, [])
+
+  @spec init(ExDatalog.Storage.schemas(), keyword()) :: t()
+  def init(schemas, _opts) do
     relations =
       schemas
       |> Map.keys()
@@ -206,6 +209,8 @@ defmodule ExDatalog.Storage.Map do
 
   If no index exists for the given relation and columns, one is built from
   the current relation data first, then the delta is merged in.
+
+  Raises `ArgumentError` if `relation` is not in the schema.
   """
   @impl ExDatalog.Storage
   @spec update_index(
@@ -230,7 +235,7 @@ defmodule ExDatalog.Storage.Map do
         :error ->
           case Map.fetch(rels, relation) do
             {:ok, set} -> build_index_from_set(set, columns)
-            :error -> %{}
+            :error -> raise ArgumentError, "unknown relation #{inspect(relation)}"
           end
       end
 
@@ -257,9 +262,9 @@ defmodule ExDatalog.Storage.Map do
   @doc """
   Returns the capabilities of this storage backend.
 
-  The Map backend supports arithmetic and comparison constraints, provenance,
-  but does not support indexed lookup or concurrent reads. It uses on-heap
-  immutable Elixir data structures.
+  The Map backend supports arithmetic, comparison, type-check, and string
+  constraints, provenance, but does not support indexed lookup or concurrent
+  reads. It uses on-heap immutable Elixir data structures.
   """
   @impl ExDatalog.Storage
   @spec capabilities(t()) :: ExDatalog.Capabilities.t()
@@ -270,8 +275,8 @@ defmodule ExDatalog.Storage.Map do
       concurrent_reads: false,
       arithmetic_constraints: true,
       comparison_constraints: true,
-      type_predicates: false,
-      string_predicates: false,
+      type_predicates: true,
+      string_predicates: true,
       provenance: true,
       external_execution: false
     }
@@ -287,9 +292,6 @@ defmodule ExDatalog.Storage.Map do
   @spec teardown(t()) :: :ok
   def teardown(%__MODULE__{}), do: :ok
 
-  # Builds a column-indexed lookup: %{composite_key => MapSet.t(tuple)}.
-  # Used by build_index (full rebuild) and as the fallback in update_index
-  # when no base index exists for the given key columns.
   defp build_index_from_set(set, columns) do
     Enum.reduce(set, %{}, fn tuple, idx ->
       k = project_tuple(tuple, columns)

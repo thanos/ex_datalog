@@ -43,6 +43,7 @@ defmodule ExDatalog.Engine.Naive do
   ## Options
 
   - `:storage` — storage module (default: `ExDatalog.Storage.Map`)
+  - `:storage_opts` — keyword list passed to `storage.init/2` (default: `[]`)
   - `:max_iterations` — per-stratum iteration limit (default: `10_000`)
   - `:timeout_ms` — per-stratum wall-clock timeout in ms (default: `30_000`)
   - `:explain` — enable provenance tracking (default: `false`)
@@ -77,6 +78,7 @@ defmodule ExDatalog.Engine.Naive do
   ## Options
 
   - `:storage` — storage module (default: `ExDatalog.Storage.Map`)
+  - `:storage_opts` — keyword list passed to `storage.init/2` (default: `[]`)
   - `:max_iterations` — per-stratum iteration limit (default: `10_000`)
   - `:timeout_ms` — per-stratum wall-clock timeout in ms (default: `30_000`)
   - `:explain` — enable provenance tracking (default: `false`)
@@ -119,6 +121,7 @@ defmodule ExDatalog.Engine.Naive do
 
   defp do_evaluate_inner(ir, opts, start_time, stratum_count) do
     storage_mod = Keyword.get(opts, :storage, ExDatalog.Storage.Map)
+    storage_opts = Keyword.get(opts, :storage_opts, [])
     max_iterations = Keyword.get(opts, :max_iterations, @default_max_iterations)
     timeout_ms = Keyword.get(opts, :timeout_ms, @default_timeout_ms)
     explain = Keyword.get(opts, :explain, false)
@@ -130,79 +133,82 @@ defmodule ExDatalog.Engine.Naive do
       end)
       |> Map.new()
 
-    state0 = storage_mod.init(schemas)
-    state0 = load_facts(state0, ir.facts, storage_mod)
+    state0 = storage_mod.init(schemas, storage_opts)
 
-    base_origins =
-      if explain do
-        init_base_origins(ir.facts)
-      else
-        nil
-      end
+    try do
+      state0 = load_facts(state0, ir.facts, storage_mod)
 
-    {state_final, total_iterations, origins} =
-      eval_strata(
-        state0,
-        ir.strata,
-        ir.rules,
-        max_iterations,
-        timeout_ms,
-        storage_mod,
-        base_origins
+      base_origins =
+        if explain do
+          init_base_origins(ir.facts)
+        else
+          nil
+        end
+
+      {state_final, total_iterations, origins} =
+        eval_strata(
+          state0,
+          ir.strata,
+          ir.rules,
+          max_iterations,
+          timeout_ms,
+          storage_mod,
+          base_origins
+        )
+
+      duration_us = System.monotonic_time(:microsecond) - start_time
+
+      relation_sizes =
+        schemas
+        |> Map.keys()
+        |> Enum.map(fn name -> {name, storage_mod.size(state_final, name)} end)
+        |> Map.new()
+
+      all_rels =
+        schemas
+        |> Map.keys()
+        |> Enum.map(fn name ->
+          {name, storage_mod.stream(state_final, name) |> MapSet.new()}
+        end)
+        |> Map.new()
+
+      caps = storage_mod.capabilities(state_final)
+
+      provenance =
+        if explain do
+          rules_map = Map.new(ir.rules, fn r -> {r.id, r} end)
+
+          %{
+            fact_origins: origins,
+            rules: rules_map
+          }
+        else
+          nil
+        end
+
+      result = %Result{
+        relations: all_rels,
+        stats: %{
+          iterations: total_iterations,
+          duration_us: duration_us,
+          relation_sizes: relation_sizes,
+          capabilities: caps
+        },
+        provenance: provenance
+      }
+
+      ExDatalog.Telemetry.emit_stop(
+        start_time,
+        total_iterations,
+        relation_sizes,
+        stratum_count,
+        caps.storage_type
       )
 
-    duration_us = System.monotonic_time(:microsecond) - start_time
-
-    relation_sizes =
-      schemas
-      |> Map.keys()
-      |> Enum.map(fn name -> {name, storage_mod.size(state_final, name)} end)
-      |> Map.new()
-
-    all_rels =
-      schemas
-      |> Map.keys()
-      |> Enum.map(fn name ->
-        {name, storage_mod.stream(state_final, name) |> MapSet.new()}
-      end)
-      |> Map.new()
-
-    caps = storage_mod.capabilities(state_final)
-
-    provenance =
-      if explain do
-        rules_map = Map.new(ir.rules, fn r -> {r.id, r} end)
-
-        %{
-          fact_origins: origins,
-          rules: rules_map
-        }
-      else
-        nil
-      end
-
-    result = %Result{
-      relations: all_rels,
-      stats: %{
-        iterations: total_iterations,
-        duration_us: duration_us,
-        relation_sizes: relation_sizes,
-        capabilities: caps
-      },
-      provenance: provenance
-    }
-
-    storage_mod.teardown(state_final)
-
-    ExDatalog.Telemetry.emit_stop(
-      start_time,
-      total_iterations,
-      relation_sizes,
-      stratum_count,
-      caps.storage_type
-    )
-
-    {:ok, result}
+      {:ok, result}
+    after
+      storage_mod.teardown(state0)
+    end
   end
 
   defp init_base_origins(facts) do
@@ -484,4 +490,5 @@ defmodule ExDatalog.Engine.Naive do
   defp ir_value_to_native({:int, n}), do: n
   defp ir_value_to_native({:str, s}), do: s
   defp ir_value_to_native({:atom, a}), do: a
+  defp ir_value_to_native({:list, elements}), do: Enum.map(elements, &ir_value_to_native/1)
 end
