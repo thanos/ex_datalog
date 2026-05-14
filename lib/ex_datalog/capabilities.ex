@@ -96,7 +96,6 @@ defmodule ExDatalog.Capabilities do
       false
 
   """
-  @spec default() :: t()
   def default, do: %__MODULE__{}
 
   @doc """
