@@ -10,7 +10,7 @@ defmodule ExDatalog.Telemetry do
   | Event | When | Measurements | Metadata |
   |---|---|---|---|
   | `[:ex_datalog, :query, :start]` | Before evaluation | `%{system_time: ...}` | `%{relation_count: ..., stratum_count: ...}` |
-  | `[:ex_datalog, :query, :stop]` | After evaluation | `%{duration: ..., iterations: ...}` | `%{relation_sizes: ..., stratum_count: ...}` |
+  | `[:ex_datalog, :query, :stop]` | After evaluation | `%{duration: ..., iterations: ...}` | `%{relation_sizes: ..., stratum_count: ..., storage_type: ...}` |
   | `[:ex_datalog, :query, :exception]` | On exception | `%{duration: ...}` | `%{kind: ..., reason: ..., stacktrace: ..., stratum_count: ...}` |
 
   The `:start` event fires before evaluation begins. The `:stop` event fires
@@ -82,18 +82,20 @@ defmodule ExDatalog.Telemetry do
 
   - `:relation_sizes` — map of relation name to tuple count.
   - `:stratum_count` — number of strata.
+  - `:storage_type` — the storage backend type (`:map`, `:ets`, or `:external`).
   """
   @spec emit_stop(
           integer(),
           non_neg_integer(),
           %{String.t() => non_neg_integer()},
-          non_neg_integer()
+          non_neg_integer(),
+          atom()
         ) :: :ok
-  def emit_stop(start_time, iterations, relation_sizes, stratum_count) do
+  def emit_stop(start_time, iterations, relation_sizes, stratum_count, storage_type \\ :map) do
     :telemetry.execute(
       query_stop(),
       %{duration: System.monotonic_time(:microsecond) - start_time, iterations: iterations},
-      %{relation_sizes: relation_sizes, stratum_count: stratum_count}
+      %{relation_sizes: relation_sizes, stratum_count: stratum_count, storage_type: storage_type}
     )
   end
 

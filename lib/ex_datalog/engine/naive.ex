@@ -167,6 +167,12 @@ defmodule ExDatalog.Engine.Naive do
       end)
       |> Map.new()
 
+    storage_type =
+      case storage_mod.capabilities(state_final) do
+        %ExDatalog.Capabilities{storage_type: st} -> st
+        _ -> :map
+      end
+
     provenance =
       if explain do
         rules_map = Map.new(ir.rules, fn r -> {r.id, r} end)
@@ -189,7 +195,15 @@ defmodule ExDatalog.Engine.Naive do
       provenance: provenance
     }
 
-    ExDatalog.Telemetry.emit_stop(start_time, total_iterations, relation_sizes, stratum_count)
+    storage_mod.teardown(state_final)
+
+    ExDatalog.Telemetry.emit_stop(
+      start_time,
+      total_iterations,
+      relation_sizes,
+      stratum_count,
+      storage_type
+    )
 
     {:ok, result}
   end
