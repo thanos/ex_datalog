@@ -39,8 +39,12 @@ defmodule ExDatalog.TermTest do
       assert_raise ArgumentError, fn -> Term.const(1.5) end
     end
 
-    test "raises on list" do
-      assert_raise ArgumentError, fn -> Term.const([1, 2]) end
+    test "accepts list constants" do
+      assert Term.const([1, 2, 3]) == {:const, [1, 2, 3]}
+    end
+
+    test "raises on unsupported value" do
+      assert_raise ArgumentError, fn -> Term.const(%{}) end
     end
   end
 

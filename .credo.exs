@@ -9,7 +9,7 @@
         ],
         excluded: [~r"/_build/", ~r"/deps/", ~r"/node_modules/"]
       },
-      plugins: [{ExSlop, []}],
+      plugins: [{ExSlop, []}, {ExDNA.Credo, []}],
       requires: [],
       strict: true,
       parse_timeout: 5000,

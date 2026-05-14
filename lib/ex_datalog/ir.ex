@@ -37,14 +37,14 @@ defmodule ExDatalog.IR do
 
   @type ir_type :: :integer | :string | :atom | :any
 
-  @type ir_value :: {:int, integer()} | {:str, String.t()} | {:atom, atom()}
+  @type ir_value :: {:int, integer()} | {:str, String.t()} | {:atom, atom()} | list()
 
-  @type ir_term :: {:var, String.t()} | {:const, ir_value()} | :wildcard
+  @type ir_term :: {:var, String.t()} | {:const, ir_value()} | {:const, list()} | :wildcard
 
   @type ir_constraint :: %ExDatalog.IR.Constraint{
           op: ExDatalog.Constraint.op(),
           left: ir_term(),
-          right: ir_term(),
+          right: ir_term() | nil,
           result: ir_term() | nil
         }
 
@@ -267,6 +267,7 @@ defmodule ExDatalog.IR do
   def from_term({:const, value}) when is_integer(value), do: {:const, {:int, value}}
   def from_term({:const, value}) when is_binary(value), do: {:const, {:str, value}}
   def from_term({:const, value}) when is_atom(value), do: {:const, {:atom, value}}
+  def from_term({:const, value}) when is_list(value), do: {:const, value}
   def from_term(:wildcard), do: :wildcard
 
   @doc """
@@ -277,7 +278,7 @@ defmodule ExDatalog.IR do
     %Constraint{
       op: op,
       left: from_term(left),
-      right: from_term(right),
+      right: if(right != nil, do: from_term(right), else: nil),
       result: if(result != nil, do: from_term(result), else: nil)
     }
   end

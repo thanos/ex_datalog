@@ -15,8 +15,8 @@ defmodule ExDatalog.Capabilities do
   | `concurrent_reads` | `false` | Safe for concurrent read access |
   | `arithmetic_constraints` | `true` | Supports arithmetic constraints |
   | `comparison_constraints` | `true` | Supports comparison constraints |
-  | `type_predicates` | `false` | Supports type-check predicates |
-  | `string_predicates` | `false` | Supports string predicates |
+  | `type_predicates` | `true` | Supports type-check predicates |
+  | `string_predicates` | `true` | Supports string predicates |
   | `provenance` | `true` | Supports derivation provenance |
   | `external_execution` | `false` | Reserved for Z3, Soufflé, etc. |
 
@@ -56,17 +56,17 @@ defmodule ExDatalog.Capabilities do
             concurrent_reads: false,
             arithmetic_constraints: true,
             comparison_constraints: true,
-            type_predicates: false,
-            string_predicates: false,
+            type_predicates: true,
+            string_predicates: true,
             provenance: true,
             external_execution: false
 
   @doc """
   Returns the default capabilities struct.
 
-  Represents the baseline capability set for the v0.1.0 Map backend:
-  arithmetic and comparison constraints, provenance, but no indexed lookup,
-  concurrent reads, type/string predicates, or external execution.
+  Represents the baseline capability set for the Map backend:
+  arithmetic, comparison, type-check, and string predicates, provenance, but no indexed
+  lookup, concurrent reads, or external execution.
 
   ## Examples
 
