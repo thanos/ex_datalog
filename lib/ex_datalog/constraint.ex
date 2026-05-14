@@ -1,6 +1,7 @@
 defmodule ExDatalog.Constraint do
   @moduledoc """
-  Built-in predicates: comparisons and arithmetic.
+  Built-in predicates: comparisons, arithmetic, and extensible constraint
+  evaluation.
 
   Constraints appear in rule bodies alongside relational atoms. They come in
   two categories:
@@ -12,6 +13,20 @@ defmodule ExDatalog.Constraint do
   - **Arithmetic constraints** — bind a new variable. The `result` field names
     the variable that receives the computed value. `left` and `right` must be
     bound; after evaluation `result` is added to the binding environment.
+
+  ## Extensible evaluation
+
+  The `ExDatalog.Constraint` behaviour defines a `evaluate/3` callback that
+  constraint modules implement. Evaluation dispatches based on the constraint's
+  `op` field:
+
+  - Comparison ops (`gt`, `lt`, `gte`, `lte`, `eq`, `neq`) dispatch to
+    `ExDatalog.Constraints.Comparison`.
+  - Arithmetic ops (`add`, `sub`, `mul`, `div`) dispatch to
+    `ExDatalog.Constraints.Arithmetic`.
+
+  New constraint types can be added by implementing the behaviour and
+  registering their `op` in the dispatch table.
 
   ## Comparison operators
 
@@ -302,4 +317,55 @@ defmodule ExDatalog.Constraint do
     do: is_binary(name) and byte_size(name) > 0
 
   defp valid_result?(_, _), do: false
+
+  # --- Extensible constraint behaviour ---
+
+  @doc """
+  Evaluates a constraint against a binding environment.
+
+  Dispatches to the appropriate constraint module based on the constraint's
+  `op` field. Comparison ops dispatch to `ExDatalog.Constraints.Comparison`,
+  arithmetic ops dispatch to `ExDatalog.Constraints.Arithmetic`.
+
+  Returns `{:ok, extended_binding}` if the constraint succeeds (for
+  arithmetic, the binding includes the result variable), or `:filter`
+  if the constraint fails or an unbound input variable is encountered.
+
+  The `context` parameter carries evaluation metadata (capabilities,
+  provenance). For v0.2.0, no constraint implementation uses the context,
+  but it is reserved for future constraint types that may need it.
+
+  ## Examples
+
+      iex> c1 = ExDatalog.Constraint.gt({:var, "X"}, {:var, "Y"})
+      iex> ExDatalog.Constraint.evaluate(c1, %{"X" => 10, "Y" => 3}, %ExDatalog.Constraint.Context{})
+      {:ok, %{"X" => 10, "Y" => 3}}
+
+      iex> c2 = ExDatalog.Constraint.add({:var, "X"}, {:var, "Y"}, {:var, "Z"})
+      iex> ExDatalog.Constraint.evaluate(c2, %{"X" => 3, "Y" => 7}, %ExDatalog.Constraint.Context{})
+      {:ok, %{"X" => 3, "Y" => 7, "Z" => 10}}
+
+  """
+  @callback evaluate(
+              constraint :: ExDatalog.IR.Constraint.t(),
+              bindings :: map(),
+              context :: ExDatalog.Constraint.Context.t()
+            ) ::
+              {:ok, map()} | :filter
+
+  @spec evaluate(t() | ExDatalog.IR.Constraint.t(), map(), ExDatalog.Constraint.Context.t()) ::
+          {:ok, map()} | :filter
+  def evaluate(%__MODULE__{} = constraint, binding, context) do
+    ir_constraint = ExDatalog.IR.from_constraint(constraint)
+    module = constraint_module(ir_constraint.op)
+    module.evaluate(ir_constraint, binding, context)
+  end
+
+  def evaluate(%ExDatalog.IR.Constraint{op: op} = constraint, binding, context) do
+    module = constraint_module(op)
+    module.evaluate(constraint, binding, context)
+  end
+
+  defp constraint_module(op) when op in @comparison_ops, do: ExDatalog.Constraints.Comparison
+  defp constraint_module(op) when op in @arithmetic_ops, do: ExDatalog.Constraints.Arithmetic
 end

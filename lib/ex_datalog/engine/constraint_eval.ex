@@ -7,6 +7,10 @@ defmodule ExDatalog.Engine.ConstraintEval do
   body. This sequential evaluation is required because arithmetic constraints
   bind their result variable, making it available to later constraints.
 
+  Evaluation dispatches through the `ExDatalog.Constraint` behaviour to
+  constraint-specific modules (`Constraints.Comparison`, `Constraints.Arithmetic`).
+  This enables adding new constraint types without modifying the engine.
+
   ## Comparison constraints
 
   Comparison constraints (`:gt`, `:lt`, `:gte`, `:lte`, `:eq`, `:neq`) are
@@ -26,6 +30,7 @@ defmodule ExDatalog.Engine.ConstraintEval do
   Division by zero returns `:filter` rather than raising.
   """
 
+  alias ExDatalog.Constraint, as: ConstraintAPI
   alias ExDatalog.Engine.Binding
   alias ExDatalog.IR.Constraint
 
@@ -70,68 +75,15 @@ defmodule ExDatalog.Engine.ConstraintEval do
   @doc """
   Applies a single IR constraint to a binding environment.
 
+  Dispatches through `ExDatalog.Constraint.evaluate/3` to the appropriate
+  constraint module based on the constraint's `op` field.
+
   Returns `{:ok, extended_binding}` for a passing comparison or a successful
   arithmetic binding. Returns `:filter` for a failing comparison, division by
   zero, or an unbound input variable.
   """
   @spec apply_one(Constraint.t(), binding()) :: {:ok, binding()} | :filter
-  def apply_one(%Constraint{op: op, left: left, right: right, result: result}, binding) do
-    with {:ok, left_val} <- resolve_operand(left, binding),
-         {:ok, right_val} <- resolve_operand(right, binding) do
-      if comparison_op?(op) do
-        apply_comparison(op, left_val, right_val, binding)
-      else
-        apply_arithmetic(op, left_val, right_val, result, binding)
-      end
-    else
-      :unbound -> :filter
-    end
+  def apply_one(%Constraint{} = constraint, binding) do
+    ConstraintAPI.evaluate(constraint, binding, %ExDatalog.Constraint.Context{})
   end
-
-  defp resolve_operand({:var, name}, binding) do
-    case Map.fetch(binding, name) do
-      {:ok, value} -> {:ok, value}
-      :error -> :unbound
-    end
-  end
-
-  defp resolve_operand({:const, ir_value}, _binding) do
-    {:ok, Binding.ir_value_to_native(ir_value)}
-  end
-
-  defp resolve_operand(:wildcard, _binding), do: :unbound
-
-  defp comparison_op?(op), do: op in [:gt, :lt, :gte, :lte, :eq, :neq]
-
-  defp apply_comparison(op, left, right, binding) do
-    result =
-      case op do
-        :gt -> left > right
-        :lt -> left < right
-        :gte -> left >= right
-        :lte -> left <= right
-        :eq -> left == right
-        :neq -> left != right
-      end
-
-    if result, do: {:ok, binding}, else: :filter
-  end
-
-  defp apply_arithmetic(op, left, right, {:var, result_name}, binding) do
-    computed =
-      case op do
-        :add -> {:ok, left + right}
-        :sub -> {:ok, left - right}
-        :mul -> {:ok, left * right}
-        :div when right == 0 -> :div_by_zero
-        :div -> {:ok, div(left, right)}
-      end
-
-    case computed do
-      {:ok, value} -> {:ok, Map.put(binding, result_name, value)}
-      :div_by_zero -> :filter
-    end
-  end
-
-  defp apply_arithmetic(_op, _left, _right, _result, _binding), do: :filter
 end
