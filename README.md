@@ -129,9 +129,9 @@ Future releases will be driven by production usage. Candidates include:
 
 | Target | Description |
 |---|---|
-| v0.2.0 | ETS storage backend (`Storage.ETS`) for workloads >100K facts |
-| v0.3.0 | Aggregation support (`count`, `sum`, `min`, `max`) |
-| v0.4.0 | Magic sets / demand-driven evaluation for goal-directed queries |
+| v0.2.0 | ETS storage backend (`Storage.ETS`) for workloads >100K facts, Internal constraint protocol / behaviour, Pure-BEAM guard predicates |
+| v0.3.0 | Aggregation support (`count`, `sum`, `min`, `max`) + Add general predicates safely, but only as deterministic BEAM callbacks. |
+| v0.4.0 | Magic sets / demand-driven evaluation for goal-directed queries + External Solver Adapter and experimental adapter layer for Z3 or Soufflé-style backends. |
 | v1.0.0 | Stable public API, Rust NIF backend for workloads >1M facts |
 
 ## Architecture
