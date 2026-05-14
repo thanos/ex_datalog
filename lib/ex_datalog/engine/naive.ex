@@ -167,11 +167,7 @@ defmodule ExDatalog.Engine.Naive do
       end)
       |> Map.new()
 
-    storage_type =
-      case storage_mod.capabilities(state_final) do
-        %ExDatalog.Capabilities{storage_type: st} -> st
-        _ -> :map
-      end
+    caps = storage_mod.capabilities(state_final)
 
     provenance =
       if explain do
@@ -190,7 +186,8 @@ defmodule ExDatalog.Engine.Naive do
       stats: %{
         iterations: total_iterations,
         duration_us: duration_us,
-        relation_sizes: relation_sizes
+        relation_sizes: relation_sizes,
+        capabilities: caps
       },
       provenance: provenance
     }
@@ -202,7 +199,7 @@ defmodule ExDatalog.Engine.Naive do
       total_iterations,
       relation_sizes,
       stratum_count,
-      storage_type
+      caps.storage_type
     )
 
     {:ok, result}

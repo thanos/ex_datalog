@@ -26,7 +26,8 @@ defmodule ExDatalog.Result do
   @type stats :: %{
           iterations: non_neg_integer(),
           duration_us: non_neg_integer(),
-          relation_sizes: %{String.t() => non_neg_integer()}
+          relation_sizes: %{String.t() => non_neg_integer()},
+          capabilities: ExDatalog.Capabilities.t()
         }
 
   @type t :: %__MODULE__{
