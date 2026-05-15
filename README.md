@@ -16,6 +16,21 @@ compiled to an engine-neutral IR, and evaluated by a pluggable backend.
 for a comprehensive introduction covering history, concepts, industry use cases,
 and how Datalog can serve as a knowledge layer for LLMs.
 
+### Why Datalog Matters
+
+Datalog remains one of the most elegant ways to express:
+
+- recursive queries;
+- graph traversal;
+- rule-based systems;
+- derived knowledge;
+- dependency analysis;
+- provenance tracking;
+- temporal reasoning;
+- incremental computation.
+
+It continues to influence modern databases, compilers, static analysis tools, knowledge graphs, authorization systems, and AI reasoning engines.
+
 ## Features
 
 - **Builder API** for constructing programs (relations, facts, rules, constraints)
@@ -264,16 +279,59 @@ Generate docs locally:
 mix docs
 ```
 
-## Further reading on Datalog
+
+
+
+## Further Reading on Datalog
+
+Datalog sits at the intersection of databases, logic programming, graph reasoning, and knowledge systems.  
+The following references are highly recommended for understanding both the theory and practice behind modern Datalog systems.
 
 - [What is Datalog?](docs/what-is-datalog.md) — this project's in-depth guide
-- [Datalog Wikimedia](https://en.wikipedia.org/wiki/Datalog) — concise encyclopedia entry
-- [Foundations of Databases](http://webdam.inria.fr/Alice/) — Abiteboul, Hull, Vianu; the formal reference
-- [Datalog Redux](https://homes.cs.washington.edu/~alon/alk.pdf) — Alvaro, Hellerstein, et al.; modern distributed Datalog
-- [LogicBlox Datalog tutorial](https://developer.logicblox.com/content/docs4/tutorial/tutorial.html) — practical tutorial from LogicBlox
-- [Soufflé](https://souffle-lang.github.io/) — high-performance Datalog for static analysis
-- [Datomic](https://www.datomic.com/) — Datalog queries over an immutable database
-- [DataScript](https://github.com/tonsky/datascript) — Datalog in ClojureScript for client-side apps
+- [Souffle's Datalog Tutorial](https://souffle-lang.github.io/tutorial)
+- [MICHELIN's introduction to Datalog](https://blogit.michelin.io/an-introduction-to-datalog/)
+- [Philip Zucker's Detailed Tutorial](https://www.philipzucker.com/notes/Languages/datalog/)
+### Modern Datalog Systems
+
+- [DataScript](https://github.com/tonsky/datascript)
+  - Immutable in-memory Datalog database for Clojure and JavaScript.
+  - Excellent examples of practical Datalog query design.
+
+- [XTDB](https://xtdb.com/)
+  - Bitemporal document database with a powerful Datalog query engine.
+  - Demonstrates how Datalog can power modern data-intensive systems.
+
+- [Soufflé](https://souffle-lang.github.io/)
+  - High-performance Datalog engine widely used in static analysis and security research.
+  - Excellent resource for understanding scalable and compiled Datalog execution.
+
+- [Differential Datalog (DDlog)](https://github.com/vmware/differential-datalog)
+  - Incremental and streaming-oriented Datalog system built on differential dataflow.
+  - Useful for understanding reactive and continuously updated derived state.
+
+---
+
+### Foundational Theory
+
+- [Stanford Datalog Notes](http://infolab.stanford.edu/~ullman/fcdb/aut07/slides/dlog.pdf)
+  - Clear academic introduction to recursive query processing, semantics, and evaluation strategies.
+
+- [Foundations of Databases — Abiteboul, Hull, Vianu](http://webdam.inria.fr/Alice/)
+  - Classic database theory text covering relational algebra, recursion, logic, and Datalog semantics.
+
+---
+
+### Talks and Presentations
+
+- [Rich Hickey — Datomic and Datalog Talks](https://www.youtube.com/results?search_query=rich+hickey+datalog+datomic)
+  - Deep insights into immutable facts, identity, temporal data, and relational thinking.
+
+- [XTDB Conference Talks](https://www.youtube.com/results?search_query=xtdb+datalog)
+  - Practical production-oriented discussions around Datalog, event sourcing, and knowledge systems.
+
+---
+
+
 
 ## Roadmap
 
