@@ -25,7 +25,7 @@ defmodule ExDatalog.Term do
   """
 
   @type var_name :: String.t()
-  @type value :: integer() | String.t() | atom()
+  @type value :: integer() | String.t() | atom() | list()
   @type t :: {:var, var_name()} | {:const, value()} | :wildcard
 
   @doc """
@@ -69,6 +69,9 @@ defmodule ExDatalog.Term do
   """
   @spec const(value()) :: {:const, value()}
   def const(value) when is_integer(value) or is_binary(value) or is_atom(value),
+    do: {:const, value}
+
+  def const(value) when is_list(value),
     do: {:const, value}
 
   def const(value) when is_float(value),
@@ -167,6 +170,7 @@ defmodule ExDatalog.Term do
   @spec valid?(term()) :: boolean()
   def valid?({:var, name}) when is_binary(name) and byte_size(name) > 0, do: true
   def valid?({:const, v}) when is_integer(v) or is_binary(v) or is_atom(v), do: true
+  def valid?({:const, v}) when is_list(v), do: true
   def valid?(:wildcard), do: true
   def valid?(_), do: false
 

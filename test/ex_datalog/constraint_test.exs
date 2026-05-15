@@ -174,15 +174,294 @@ defmodule ExDatalog.ConstraintTest do
     end
   end
 
-  describe "result_variable/1" do
-    test "returns variable name for arithmetic constraint" do
-      c = Constraint.add(@x, @y, @z)
-      assert Constraint.result_variable(c) == "Z"
+  describe "type predicate constructors" do
+    test "type_integer/1 builds an is_integer constraint" do
+      c = Constraint.type_integer(@x)
+      assert c.op == :is_integer
+      assert c.left == @x
+      assert c.right == nil
+      assert c.result == nil
     end
 
-    test "returns nil for comparison constraint" do
-      c = Constraint.gt(@x, @c5)
-      assert Constraint.result_variable(c) == nil
+    test "type_binary/1 builds an is_binary constraint" do
+      c = Constraint.type_binary(@x)
+      assert c.op == :is_binary
+      assert c.left == @x
+      assert c.right == nil
+      assert c.result == nil
+    end
+
+    test "type_atom/1 builds an is_atom constraint" do
+      c = Constraint.type_atom(@x)
+      assert c.op == :is_atom
+      assert c.left == @x
+      assert c.right == nil
+      assert c.result == nil
+    end
+  end
+
+  describe "string predicate constructors" do
+    test "starts_with/2 builds a starts_with constraint" do
+      c = Constraint.starts_with(@x, Term.const("hello"))
+      assert c.op == :starts_with
+      assert c.left == @x
+      assert c.right == Term.const("hello")
+      assert c.result == nil
+    end
+
+    test "contains/2 builds a contains constraint" do
+      c = Constraint.contains(@x, Term.const("ell"))
+      assert c.op == :contains
+      assert c.left == @x
+      assert c.right == Term.const("ell")
+      assert c.result == nil
+    end
+  end
+
+  describe "membership constructor" do
+    test "member/2 builds a membership constraint" do
+      c = Constraint.member(@x, Term.const([:a, :b, :c]))
+      assert c.op == :member
+      assert c.left == @x
+      assert c.right == Term.const([:a, :b, :c])
+      assert c.result == nil
+    end
+  end
+
+  describe "type_predicate?/1" do
+    test "returns true for type predicate constraints" do
+      for op <- [:is_integer, :is_binary, :is_atom] do
+        c = %Constraint{op: op, left: @x, right: nil, result: nil}
+        assert Constraint.type_predicate?(c) == true
+      end
+    end
+
+    test "returns false for non-type-predicate constraints" do
+      assert Constraint.type_predicate?(Constraint.gt(@x, @c5)) == false
+      assert Constraint.type_predicate?(Constraint.add(@x, @y, @z)) == false
+      assert Constraint.type_predicate?(Constraint.starts_with(@x, Term.const("a"))) == false
+      assert Constraint.type_predicate?(Constraint.member(@x, Term.const([:a]))) == false
+    end
+  end
+
+  describe "string_predicate?/1" do
+    test "returns true for string predicate constraints" do
+      for op <- [:starts_with, :contains] do
+        c = %Constraint{op: op, left: @x, right: @y, result: nil}
+        assert Constraint.string_predicate?(c) == true
+      end
+    end
+
+    test "returns false for non-string-predicate constraints" do
+      assert Constraint.string_predicate?(Constraint.gt(@x, @c5)) == false
+      assert Constraint.string_predicate?(Constraint.type_integer(@x)) == false
+      assert Constraint.string_predicate?(Constraint.member(@x, Term.const([:a]))) == false
+    end
+  end
+
+  describe "membership?/1" do
+    test "returns true for membership constraints" do
+      c = Constraint.member(@x, Term.const([:a, :b]))
+      assert Constraint.membership?(c) == true
+    end
+
+    test "returns false for non-membership constraints" do
+      assert Constraint.membership?(Constraint.gt(@x, @c5)) == false
+      assert Constraint.membership?(Constraint.type_integer(@x)) == false
+      assert Constraint.membership?(Constraint.starts_with(@x, Term.const("a"))) == false
+    end
+  end
+
+  describe "valid?/1 for new constraint types" do
+    test "valid type predicate constraints" do
+      assert Constraint.valid?(Constraint.type_integer(@x)) == true
+      assert Constraint.valid?(Constraint.type_binary(@x)) == true
+      assert Constraint.valid?(Constraint.type_atom(@x)) == true
+    end
+
+    test "valid string predicate constraints" do
+      assert Constraint.valid?(Constraint.starts_with(@x, Term.const("hello"))) == true
+      assert Constraint.valid?(Constraint.contains(@x, Term.const("lo"))) == true
+    end
+
+    test "valid membership constraint with constant list" do
+      assert Constraint.valid?(Constraint.member(@x, Term.const([:a, :b]))) == true
+    end
+
+    test "invalid: membership with non-list right" do
+      c = %Constraint{op: :member, left: @x, right: {:var, "Y"}, result: nil}
+      assert Constraint.valid?(c) == false
+    end
+
+    test "invalid: membership with constant integer right" do
+      c = %Constraint{op: :member, left: @x, right: {:const, 5}, result: nil}
+      assert Constraint.valid?(c) == false
+    end
+
+    test "invalid: type predicate with non-nil right" do
+      c = %Constraint{op: :is_integer, left: @x, right: @y, result: nil}
+      assert Constraint.valid?(c) == false
+    end
+
+    test "invalid: type predicate with non-nil result" do
+      c = %Constraint{op: :is_integer, left: @x, right: nil, result: @z}
+      assert Constraint.valid?(c) == false
+    end
+
+    test "invalid: string predicate with nil result" do
+      c = %Constraint{op: :starts_with, left: @x, right: @y, result: @z}
+      assert Constraint.valid?(c) == false
+    end
+  end
+
+  describe "input_variables/1 for new constraint types" do
+    test "type predicates return only left variable" do
+      c = Constraint.type_integer(@x)
+      assert Constraint.input_variables(c) == ["X"]
+    end
+
+    test "type predicates with constant left return empty" do
+      c = Constraint.type_integer(Term.const(5))
+      assert Constraint.input_variables(c) == []
+    end
+
+    test "string predicates return both variables" do
+      c = Constraint.starts_with(@x, @y)
+      assert Constraint.input_variables(c) == ["X", "Y"]
+    end
+
+    test "membership returns only left variable" do
+      c = Constraint.member(@x, Term.const([:a, :b]))
+      assert Constraint.input_variables(c) == ["X"]
+    end
+  end
+
+  describe "result_variable/1 for new constraint types" do
+    test "type predicates return nil" do
+      assert Constraint.result_variable(Constraint.type_integer(@x)) == nil
+    end
+
+    test "string predicates return nil" do
+      assert Constraint.result_variable(Constraint.starts_with(@x, Term.const("a"))) == nil
+    end
+
+    test "membership returns nil" do
+      assert Constraint.result_variable(Constraint.member(@x, Term.const([:a]))) == nil
+    end
+  end
+
+  describe "dispatch consistency" do
+    test "every category op dispatches without error" do
+      comparison_ops = [:gt, :lt, :gte, :lte, :eq, :neq]
+      arithmetic_ops = [:add, :sub, :mul, :div]
+      type_ops = [:is_integer, :is_binary, :is_atom]
+      string_ops = [:starts_with, :contains]
+      membership_ops = [:member]
+
+      for op <- comparison_ops ++ arithmetic_ops ++ type_ops ++ string_ops ++ membership_ops do
+        c = %Constraint{op: op, left: @x, right: nil, result: nil}
+        result = Constraint.evaluate(c, %{}, %ExDatalog.Constraint.Context{})
+
+        assert result in [{:ok, %{}}, :filter],
+               "op #{inspect(op)} should dispatch without error"
+      end
+    end
+
+    test "constraint_module/1 dispatches every category to the right module" do
+      modules = [
+        {ExDatalog.Constraints.Comparison, [:gt, :lt, :gte, :lte, :eq, :neq]},
+        {ExDatalog.Constraints.Arithmetic, [:add, :sub, :mul, :div]},
+        {ExDatalog.Constraints.Type, [:is_integer, :is_binary, :is_atom]},
+        {ExDatalog.Constraints.StringPredicate, [:starts_with, :contains]},
+        {ExDatalog.Constraints.Membership, [:member]}
+      ]
+
+      for {_module, ops} <- modules do
+        all_ops = Enum.flat_map(modules, fn {_mod, ops} -> ops end)
+        assert length(all_ops) == 16
+
+        for op <- ops do
+          ir = %ExDatalog.IR.Constraint{
+            op: op,
+            left: {:var, "X"},
+            right: {:var, "Y"},
+            result: nil
+          }
+
+          result = Constraint.evaluate(ir, %{}, %ExDatalog.Constraint.Context{})
+
+          assert result in [{:ok, %{}}, :filter, {:ok, %{"X" => 10}}],
+                 "op #{inspect(op)} should dispatch through Constraint.evaluate/3"
+        end
+      end
+    end
+
+    test "valid?/1 returns true for all ops in @all_ops" do
+      valid_constraints = [
+        Constraint.gt(@x, @y),
+        Constraint.lt(@x, @y),
+        Constraint.gte(@x, @y),
+        Constraint.lte(@x, @y),
+        Constraint.eq(@x, @y),
+        Constraint.neq(@x, @y),
+        Constraint.add(@x, @y, @z),
+        Constraint.sub(@x, @y, @z),
+        Constraint.mul(@x, @y, @z),
+        Constraint.div(@x, @y, @z),
+        Constraint.type_integer(@x),
+        Constraint.type_binary(@x),
+        Constraint.type_atom(@x),
+        Constraint.starts_with(@x, Term.const("hello")),
+        Constraint.contains(@x, Term.const("ell")),
+        Constraint.member(@x, Term.const([:a, :b]))
+      ]
+
+      for c <- valid_constraints do
+        assert Constraint.valid?(c), "op #{inspect(c.op)} should be valid"
+      end
+    end
+  end
+
+  describe "evaluate/3 — public struct dispatch" do
+    test "dispatches through public Constraint struct" do
+      c = Constraint.gt(@x, @y)
+
+      assert {:ok, %{"X" => 10, "Y" => 3}} =
+               Constraint.evaluate(c, %{"X" => 10, "Y" => 3}, %ExDatalog.Constraint.Context{})
+    end
+
+    test "dispatches comparison through public struct" do
+      c = Constraint.lt(@x, @c5)
+
+      assert {:ok, %{"X" => 3}} =
+               Constraint.evaluate(c, %{"X" => 3}, %ExDatalog.Constraint.Context{})
+
+      assert :filter = Constraint.evaluate(c, %{"X" => 10}, %ExDatalog.Constraint.Context{})
+    end
+
+    test "dispatches arithmetic through public struct" do
+      c = Constraint.add(@x, @y, @z)
+
+      assert {:ok, %{"X" => 3, "Y" => 7, "Z" => 10}} =
+               Constraint.evaluate(c, %{"X" => 3, "Y" => 7}, %ExDatalog.Constraint.Context{})
+    end
+
+    test "dispatches type predicate through public struct" do
+      c = Constraint.type_integer(@x)
+
+      assert {:ok, %{"X" => 42}} =
+               Constraint.evaluate(c, %{"X" => 42}, %ExDatalog.Constraint.Context{})
+
+      assert :filter = Constraint.evaluate(c, %{"X" => :atom}, %ExDatalog.Constraint.Context{})
+    end
+
+    test "dispatches membership through public struct" do
+      c = Constraint.member(@x, Term.const([:a, :b, :c]))
+
+      assert {:ok, %{"X" => :a}} =
+               Constraint.evaluate(c, %{"X" => :a}, %ExDatalog.Constraint.Context{})
+
+      assert :filter = Constraint.evaluate(c, %{"X" => :z}, %ExDatalog.Constraint.Context{})
     end
   end
 end

@@ -49,7 +49,7 @@ defmodule ExDatalog.TelemetryTest do
 
       {measurements, metadata} =
         capture_event(Telemetry.query_stop(), fn ->
-          Telemetry.emit_stop(start_time, 3, relation_sizes, 1)
+          Telemetry.emit_stop(start_time, 3, relation_sizes, 1, :map)
         end)
 
       assert Map.has_key?(measurements, :duration)

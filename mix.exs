@@ -1,7 +1,7 @@
 defmodule ExDatalog.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.2.0"
   @source_url "https://github.com/thanos/ex_datalog"
 
   def project do
@@ -62,7 +62,9 @@ defmodule ExDatalog.MixProject do
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:excoveralls, "~> 0.18", only: :test},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
-      {:stream_data, "~> 1.1", only: [:dev, :test]}
+      {:stream_data, "~> 1.1", only: [:dev, :test]},
+      {:ex_slop, "~> 0.1", only: [:dev, :test], runtime: false},
+      {:ex_dna, "~> 1.5", only: [:dev, :test], runtime: false}
     ]
   end
 
@@ -97,7 +99,7 @@ defmodule ExDatalog.MixProject do
       licenses: ["MIT"],
       maintainers: ["Thanos Vassilakis"],
       links: %{"GitHub" => @source_url},
-      files: ~w(lib .formatter.exs mix.exs README.md LICENSE CHANGELOG.md)
+      files: ~w(lib .formatter.exs mix.exs README.md LICENSE CHANGELOG.md docs)
     ]
   end
 
@@ -106,7 +108,13 @@ defmodule ExDatalog.MixProject do
       main: "ExDatalog",
       source_ref: "v#{@version}",
       source_url: @source_url,
-      extras: ["README.md", "docs/what-is-datalog.md"],
+      extras: [
+        "README.md",
+        "CHANGELOG.md",
+        "docs/what-is-datalog.md",
+        "docs/constraints.md",
+        "docs/storage_backends.md"
+      ],
       groups_for_modules: [
         "Program Builder": [
           ExDatalog.Program,

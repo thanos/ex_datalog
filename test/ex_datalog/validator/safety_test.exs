@@ -198,6 +198,125 @@ defmodule ExDatalog.Validator.SafetyTest do
     end
   end
 
+  describe "type and string predicate constraint safety" do
+    test "safe: type_integer constraint with bound variable" do
+      rule =
+        Rule.new(
+          Atom.new("int_val", [Term.var("X")]),
+          [{:positive, Atom.new("value", [Term.var("X")])}],
+          [Constraint.type_integer(Term.var("X"))]
+        )
+
+      program =
+        build_program_with_rule(rule, [{"value", [:integer]}, {"int_val", [:integer]}])
+
+      constraint_errors =
+        Enum.filter(Safety.check(program), &(&1.kind == :unbound_constraint_variable))
+
+      assert constraint_errors == []
+    end
+
+    test "safe: type_atom constraint with bound variable" do
+      rule =
+        Rule.new(
+          Atom.new("named", [Term.var("X")]),
+          [{:positive, Atom.new("thing", [Term.var("X")])}],
+          [Constraint.type_atom(Term.var("X"))]
+        )
+
+      program =
+        build_program_with_rule(rule, [{"thing", [:atom]}, {"named", [:atom]}])
+
+      constraint_errors =
+        Enum.filter(Safety.check(program), &(&1.kind == :unbound_constraint_variable))
+
+      assert constraint_errors == []
+    end
+
+    test "safe: starts_with constraint with bound variables" do
+      rule =
+        Rule.new(
+          Atom.new("prefix_match", [Term.var("X")]),
+          [{:positive, Atom.new("word", [Term.var("X")])}],
+          [Constraint.starts_with(Term.var("X"), Term.const("he"))]
+        )
+
+      program =
+        build_program_with_rule(rule, [{"word", [:atom]}, {"prefix_match", [:atom]}])
+
+      constraint_errors =
+        Enum.filter(Safety.check(program), &(&1.kind == :unbound_constraint_variable))
+
+      assert constraint_errors == []
+    end
+
+    test "safe: member constraint with bound left variable" do
+      rule =
+        Rule.new(
+          Atom.new("primary", [Term.var("X")]),
+          [{:positive, Atom.new("color", [Term.var("X")])}],
+          [Constraint.member(Term.var("X"), Term.const([:red, :blue, :green]))]
+        )
+
+      program =
+        build_program_with_rule(rule, [{"color", [:atom]}, {"primary", [:atom]}])
+
+      constraint_errors =
+        Enum.filter(Safety.check(program), &(&1.kind == :unbound_constraint_variable))
+
+      assert constraint_errors == []
+    end
+
+    test "safe: type_binary constraint with bound variable" do
+      rule =
+        Rule.new(
+          Atom.new("str_val", [Term.var("X")]),
+          [{:positive, Atom.new("value", [Term.var("X")])}],
+          [Constraint.type_binary(Term.var("X"))]
+        )
+
+      program =
+        build_program_with_rule(rule, [{"value", [:integer]}, {"str_val", [:integer]}])
+
+      constraint_errors =
+        Enum.filter(Safety.check(program), &(&1.kind == :unbound_constraint_variable))
+
+      assert constraint_errors == []
+    end
+
+    test "unsafe: type_integer with unbound variable" do
+      rule =
+        Rule.new(
+          Atom.new("int_val", [Term.var("Z")]),
+          [{:positive, Atom.new("input", [Term.var("X")])}],
+          [Constraint.type_integer(Term.var("Y"))]
+        )
+
+      program =
+        build_program_with_rule(rule, [{"input", [:atom]}, {"int_val", [:integer]}])
+
+      errors = Safety.check(program)
+      unbound = Enum.filter(errors, &(&1.kind == :unbound_constraint_variable))
+      assert unbound != []
+    end
+
+    test "unsafe: starts_with with unbound right variable" do
+      rule =
+        Rule.new(
+          Atom.new("result", [Term.var("X")]),
+          [{:positive, Atom.new("input", [Term.var("X")])}],
+          [Constraint.starts_with(Term.var("X"), Term.var("Y"))]
+        )
+
+      program =
+        build_program_with_rule(rule, [{"input", [:atom]}, {"result", [:atom]}])
+
+      errors = Safety.check(program)
+      unbound = Enum.filter(errors, &(&1.kind == :unbound_constraint_variable))
+      assert unbound != []
+    end
+  end
+
   describe "wildcard in rule head" do
     test "wildcard in head is rejected" do
       rule =
