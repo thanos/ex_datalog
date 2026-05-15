@@ -107,8 +107,6 @@ defmodule ExDatalog.StorageTest do
       ets_state = Storage.ETS.insert_many(ets_state, "rel", tuples)
       ets_state = Storage.ETS.insert(ets_state, "val", {:x, 1})
 
-      on_exit(fn -> Storage.ETS.teardown(ets_state) end)
-
       {:ok, map_state: map_state, ets_state: ets_state, tuples: tuples}
     end
 
