@@ -8,8 +8,9 @@ defmodule ExDatalog.Engine.ConstraintEval do
   bind their result variable, making it available to later constraints.
 
   Evaluation dispatches through the `ExDatalog.Constraint` behaviour to
-  constraint-specific modules (`Constraints.Comparison`, `Constraints.Arithmetic`).
-  This enables adding new constraint types without modifying the engine.
+  constraint-specific modules. The context parameter carries storage
+  capabilities from the engine so that constraint implementations can inspect
+  backend properties if needed.
 
   ## Comparison constraints
 
@@ -62,10 +63,12 @@ defmodule ExDatalog.Engine.ConstraintEval do
       {:ok, %{"X" => 3, "Y" => 7, "Z" => 10}}
 
   """
-  @spec apply([Constraint.t()], binding()) :: {:ok, binding()} | :filter
-  def apply(constraints, binding) when is_list(constraints) do
+  @spec apply([Constraint.t()], binding(), ExDatalog.Constraint.Context.t()) ::
+          {:ok, binding()} | :filter
+  def apply(constraints, binding, ctx \\ %ExDatalog.Constraint.Context{})
+      when is_list(constraints) do
     Enum.reduce_while(constraints, {:ok, binding}, fn c, {:ok, b} ->
-      case apply_one(c, b) do
+      case apply_one(c, b, ctx) do
         {:ok, new_b} -> {:cont, {:ok, new_b}}
         :filter -> {:halt, :filter}
       end
@@ -82,8 +85,9 @@ defmodule ExDatalog.Engine.ConstraintEval do
   arithmetic binding. Returns `:filter` for a failing comparison, division by
   zero, or an unbound input variable.
   """
-  @spec apply_one(Constraint.t(), binding()) :: {:ok, binding()} | :filter
-  def apply_one(%Constraint{} = constraint, binding) do
-    ConstraintAPI.evaluate(constraint, binding, %ExDatalog.Constraint.Context{})
+  @spec apply_one(Constraint.t(), binding(), ExDatalog.Constraint.Context.t()) ::
+          {:ok, binding()} | :filter
+  def apply_one(%Constraint{} = constraint, binding, ctx \\ %ExDatalog.Constraint.Context{}) do
+    ConstraintAPI.evaluate(constraint, binding, ctx)
   end
 end

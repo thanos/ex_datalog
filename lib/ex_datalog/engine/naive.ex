@@ -135,6 +135,10 @@ defmodule ExDatalog.Engine.Naive do
 
     state0 = storage_mod.init(schemas, storage_opts)
 
+    constraint_ctx = %ExDatalog.Constraint.Context{
+      capabilities: storage_mod.capabilities(state0)
+    }
+
     try do
       state0 = load_facts(state0, ir.facts, storage_mod)
 
@@ -153,7 +157,8 @@ defmodule ExDatalog.Engine.Naive do
           max_iterations,
           timeout_ms,
           storage_mod,
-          base_origins
+          base_origins,
+          constraint_ctx
         )
 
       result =
@@ -318,7 +323,16 @@ defmodule ExDatalog.Engine.Naive do
     end)
   end
 
-  defp eval_strata(state, strata, rules, max_iterations, timeout_ms, storage_mod, base_origins) do
+  defp eval_strata(
+         state,
+         strata,
+         rules,
+         max_iterations,
+         timeout_ms,
+         storage_mod,
+         base_origins,
+         ctx
+       ) do
     Enum.reduce(strata, {state, 0, base_origins}, fn %IR.Stratum{index: stratum_idx},
                                                      {s, total_iter, origins} ->
       stratum_rules = Enum.filter(rules, fn r -> r.stratum == stratum_idx end)
@@ -327,14 +341,22 @@ defmodule ExDatalog.Engine.Naive do
         {s, total_iter, origins}
       else
         {new_state, iters, new_origins} =
-          eval_stratum(s, stratum_rules, max_iterations, timeout_ms, storage_mod, origins)
+          eval_stratum(s, stratum_rules, max_iterations, timeout_ms, storage_mod, origins, ctx)
 
         {new_state, total_iter + iters, new_origins}
       end
     end)
   end
 
-  defp eval_stratum(state, rules, max_iterations, timeout_ms, storage_mod, origins) do
+  defp eval_stratum(
+         state,
+         rules,
+         max_iterations,
+         timeout_ms,
+         storage_mod,
+         origins,
+         constraint_ctx
+       ) do
     all_rels = all_relation_names(rules)
     deadline = System.monotonic_time(:millisecond) + timeout_ms
 
@@ -353,7 +375,8 @@ defmodule ExDatalog.Engine.Naive do
       max_iterations: max_iterations,
       deadline: deadline,
       storage_mod: storage_mod,
-      origins: origins
+      origins: origins,
+      constraint_ctx: constraint_ctx
     }
 
     ctx = fixpoint(ctx)
@@ -381,7 +404,7 @@ defmodule ExDatalog.Engine.Naive do
     track_origins = ctx.origins != nil
 
     {derived_all, derived_origins} =
-      derive(ctx.rules, ctx.full, ctx.delta, ctx.old, track_origins)
+      derive(ctx.rules, ctx.full, ctx.delta, ctx.old, track_origins, ctx.constraint_ctx)
 
     new_tuples = filter_new(derived_all, ctx.full)
 
@@ -412,11 +435,11 @@ defmodule ExDatalog.Engine.Naive do
     end
   end
 
-  defp derive(rules, full, delta, old, track_origins) do
+  defp derive(rules, full, delta, old, track_origins, constraint_ctx) do
     {derived, origins} =
       Enum.reduce(rules, {%{}, %{}}, fn rule, {derived_acc, origins_acc} ->
         head_rel = rule.head.relation
-        tuples = Evaluator.eval_rule_iteration(rule, full, delta, old)
+        tuples = Evaluator.eval_rule_iteration(rule, full, delta, old, constraint_ctx)
 
         new_derived =
           Map.update(

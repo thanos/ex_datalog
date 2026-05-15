@@ -68,9 +68,15 @@ defmodule ExDatalog.Engine.Evaluator do
   The results of all variants are unioned, then deduplicated against `full`
   for the head relation.
   """
-  @spec eval_rule_iteration(IR.Rule.t(), relation_facts(), relation_facts(), relation_facts()) ::
+  @spec eval_rule_iteration(
+          IR.Rule.t(),
+          relation_facts(),
+          relation_facts(),
+          relation_facts(),
+          ExDatalog.Constraint.Context.t()
+        ) ::
           [tuple()]
-  def eval_rule_iteration(rule, full, delta, old) do
+  def eval_rule_iteration(rule, full, delta, old, ctx \\ %ExDatalog.Constraint.Context{}) do
     positive_body = positive_atoms(rule)
     k = length(positive_body)
 
@@ -78,11 +84,11 @@ defmodule ExDatalog.Engine.Evaluator do
     existing = Map.get(full, head_relation, MapSet.new())
 
     if k == 0 do
-      derived = eval_fact_rule(rule, full)
+      derived = eval_fact_rule(rule, full, ctx)
       derived |> MapSet.new() |> MapSet.difference(existing) |> MapSet.to_list()
     else
       0..(k - 1)
-      |> Enum.flat_map(&eval_variant_if_delta(rule, positive_body, full, delta, old, &1))
+      |> Enum.flat_map(&eval_variant_if_delta(rule, positive_body, full, delta, old, &1, ctx))
       |> MapSet.new()
       |> MapSet.difference(existing)
       |> MapSet.to_list()
@@ -116,7 +122,7 @@ defmodule ExDatalog.Engine.Evaluator do
     for {:positive, %IR.Atom{} = atom} <- body, do: atom
   end
 
-  defp eval_fact_rule(rule, full) do
+  defp eval_fact_rule(rule, full, ctx) do
     bindings = [%{}]
 
     bindings =
@@ -129,7 +135,7 @@ defmodule ExDatalog.Engine.Evaluator do
           Enum.filter(acc, fn b -> check_negative_atom(atom, b, full) end)
 
         {:constraint, c}, acc ->
-          apply_constraint_to_bindings(c, acc)
+          apply_constraint_to_bindings(c, acc, ctx)
       end)
 
     case bindings do
@@ -138,16 +144,16 @@ defmodule ExDatalog.Engine.Evaluator do
     end
   end
 
-  defp apply_constraint_to_bindings(constraint, bindings) do
+  defp apply_constraint_to_bindings(constraint, bindings, ctx) do
     Enum.flat_map(bindings, fn b ->
-      case ConstraintEval.apply_one(constraint, b) do
+      case ConstraintEval.apply_one(constraint, b, ctx) do
         {:ok, new_b} -> [new_b]
         :filter -> []
       end
     end)
   end
 
-  defp eval_variant(rule, positive_body, full, delta, old, delta_pos) do
+  defp eval_variant(rule, positive_body, full, delta, old, delta_pos, ctx) do
     bindings = [%{}]
 
     bindings =
@@ -171,7 +177,7 @@ defmodule ExDatalog.Engine.Evaluator do
         Join.join(acc, atom.terms, tuples)
       end)
 
-    bindings = apply_constraints(rule.body, bindings)
+    bindings = apply_constraints(rule.body, bindings, ctx)
     bindings = apply_negation(rule.body, bindings, full)
 
     case bindings do
@@ -180,21 +186,21 @@ defmodule ExDatalog.Engine.Evaluator do
     end
   end
 
-  defp eval_variant_if_delta(rule, positive_body, full, delta, old, delta_pos) do
+  defp eval_variant_if_delta(rule, positive_body, full, delta, old, delta_pos, ctx) do
     delta_relation = Enum.at(positive_body, delta_pos).relation
 
     if MapSet.size(Map.get(delta, delta_relation, MapSet.new())) == 0 do
       []
     else
-      eval_variant(rule, positive_body, full, delta, old, delta_pos)
+      eval_variant(rule, positive_body, full, delta, old, delta_pos, ctx)
     end
   end
 
-  defp apply_constraints(body, bindings) do
+  defp apply_constraints(body, bindings, ctx) do
     constraints = for {:constraint, c} <- body, do: c
 
     Enum.flat_map(bindings, fn b ->
-      case ConstraintEval.apply(constraints, b) do
+      case ConstraintEval.apply(constraints, b, ctx) do
         {:ok, new_b} -> [new_b]
         :filter -> []
       end

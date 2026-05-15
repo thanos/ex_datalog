@@ -1,8 +1,8 @@
-defmodule ExDatalog.Constraints.StringTest do
+defmodule ExDatalog.Constraints.StringPredicateTest do
   use ExUnit.Case, async: true
 
   alias ExDatalog.Constraint.Context
-  alias ExDatalog.Constraints.String, as: StringPred
+  alias ExDatalog.Constraints.StringPredicate
   alias ExDatalog.IR.Constraint
 
   describe "evaluate/3 — starts_with" do
@@ -15,7 +15,7 @@ defmodule ExDatalog.Constraints.StringTest do
       }
 
       assert {:ok, %{"X" => "hello"}} =
-               StringPred.evaluate(c, %{"X" => "hello"}, %Context{})
+               StringPredicate.evaluate(c, %{"X" => "hello"}, %Context{})
     end
 
     test "filters when string does not start with prefix" do
@@ -26,7 +26,7 @@ defmodule ExDatalog.Constraints.StringTest do
         result: nil
       }
 
-      assert :filter = StringPred.evaluate(c, %{"X" => "hello"}, %Context{})
+      assert :filter = StringPredicate.evaluate(c, %{"X" => "hello"}, %Context{})
     end
 
     test "filters when left is not a binary" do
@@ -37,7 +37,7 @@ defmodule ExDatalog.Constraints.StringTest do
         result: nil
       }
 
-      assert :filter = StringPred.evaluate(c, %{"X" => 42}, %Context{})
+      assert :filter = StringPredicate.evaluate(c, %{"X" => 42}, %Context{})
     end
 
     test "filters when right is not a binary" do
@@ -48,7 +48,7 @@ defmodule ExDatalog.Constraints.StringTest do
         result: nil
       }
 
-      assert :filter = StringPred.evaluate(c, %{"X" => "hello"}, %Context{})
+      assert :filter = StringPredicate.evaluate(c, %{"X" => "hello"}, %Context{})
     end
 
     test "filters when left variable is unbound" do
@@ -59,14 +59,14 @@ defmodule ExDatalog.Constraints.StringTest do
         result: nil
       }
 
-      assert :filter = StringPred.evaluate(c, %{}, %Context{})
+      assert :filter = StringPredicate.evaluate(c, %{}, %Context{})
     end
 
     test "both variables bound" do
       c = %Constraint{op: :starts_with, left: {:var, "X"}, right: {:var, "Y"}, result: nil}
 
       assert {:ok, %{"X" => "hello", "Y" => "hel"}} =
-               StringPred.evaluate(c, %{"X" => "hello", "Y" => "hel"}, %Context{})
+               StringPredicate.evaluate(c, %{"X" => "hello", "Y" => "hel"}, %Context{})
     end
   end
 
@@ -79,7 +79,7 @@ defmodule ExDatalog.Constraints.StringTest do
         result: nil
       }
 
-      assert {:ok, %{"X" => "hello"}} = StringPred.evaluate(c, %{"X" => "hello"}, %Context{})
+      assert {:ok, %{"X" => "hello"}} = StringPredicate.evaluate(c, %{"X" => "hello"}, %Context{})
     end
 
     test "filters when string does not contain substring" do
@@ -90,22 +90,22 @@ defmodule ExDatalog.Constraints.StringTest do
         result: nil
       }
 
-      assert :filter = StringPred.evaluate(c, %{"X" => "hello"}, %Context{})
+      assert :filter = StringPredicate.evaluate(c, %{"X" => "hello"}, %Context{})
     end
 
     test "filters when left is not a binary" do
       c = %Constraint{op: :contains, left: {:var, "X"}, right: {:const, {:str, "h"}}, result: nil}
-      assert :filter = StringPred.evaluate(c, %{"X" => 42}, %Context{})
+      assert :filter = StringPredicate.evaluate(c, %{"X" => 42}, %Context{})
     end
 
     test "filters when right is not a binary" do
       c = %Constraint{op: :contains, left: {:var, "X"}, right: {:const, {:int, 1}}, result: nil}
-      assert :filter = StringPred.evaluate(c, %{"X" => "hello"}, %Context{})
+      assert :filter = StringPredicate.evaluate(c, %{"X" => "hello"}, %Context{})
     end
 
     test "filters when a variable is unbound" do
       c = %Constraint{op: :contains, left: {:var, "X"}, right: {:const, {:str, "h"}}, result: nil}
-      assert :filter = StringPred.evaluate(c, %{}, %Context{})
+      assert :filter = StringPredicate.evaluate(c, %{}, %Context{})
     end
   end
 
@@ -118,7 +118,7 @@ defmodule ExDatalog.Constraints.StringTest do
         result: nil
       }
 
-      assert :filter = StringPred.evaluate(c, %{}, %Context{})
+      assert :filter = StringPredicate.evaluate(c, %{}, %Context{})
     end
   end
 end

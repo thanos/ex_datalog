@@ -38,7 +38,7 @@ defmodule ExDatalog.Constraint do
   - Type predicate ops (`is_integer`, `is_binary`, `is_atom`) dispatch to
     `ExDatalog.Constraints.Type`.
   - String predicate ops (`starts_with`, `contains`) dispatch to
-    `ExDatalog.Constraints.String`.
+    `ExDatalog.Constraints.StringPredicate`.
   - Membership op (`member`) dispatch to
     `ExDatalog.Constraints.Membership`.
 
@@ -575,22 +575,31 @@ defmodule ExDatalog.Constraint do
   @doc """
   Evaluates a constraint against a binding environment.
 
+  Accepts either a `%Constraint{}` (public struct) or a
+  `%IR.Constraint{}` (compiled form). The IR clause is the hot path used
+  by the engine; the public-struct clause converts to IR first, then
+  delegates. External callers and tests may use either form.
+
   Dispatches to the appropriate constraint module based on the constraint's
   `op` field:
 
   - Comparison ops dispatch to `ExDatalog.Constraints.Comparison`.
   - Arithmetic ops dispatch to `ExDatalog.Constraints.Arithmetic`.
   - Type predicate ops dispatch to `ExDatalog.Constraints.Type`.
-  - String predicate ops dispatch to `ExDatalog.Constraints.String`.
+  - String predicate ops dispatch to `ExDatalog.Constraints.StringPredicate`.
   - Membership ops dispatch to `ExDatalog.Constraints.Membership`.
+
+  Adding a new constraint type requires adding the `op` to the relevant
+  category list and a dispatch clause in `constraint_module/1` — this is
+  a closed dispatch, not a runtime registry.
 
   Returns `{:ok, extended_binding}` if the constraint succeeds (for
   arithmetic, the binding includes the result variable), or `:filter`
   if the constraint fails or an unbound input variable is encountered.
 
   The `context` parameter carries evaluation metadata (capabilities,
-  provenance). For v0.2.0, no constraint implementation uses the context,
-  but it is reserved for future constraint types that may need it.
+  provenance). For v0.2.0, no constraint implementation reads from the
+  context, but it is reserved for future use.
 
   ## Examples
 
@@ -629,6 +638,6 @@ defmodule ExDatalog.Constraint do
   defp constraint_module(op) when op in @comparison_ops, do: ExDatalog.Constraints.Comparison
   defp constraint_module(op) when op in @arithmetic_ops, do: ExDatalog.Constraints.Arithmetic
   defp constraint_module(op) when op in @type_ops, do: ExDatalog.Constraints.Type
-  defp constraint_module(op) when op in @string_ops, do: ExDatalog.Constraints.String
+  defp constraint_module(op) when op in @string_ops, do: ExDatalog.Constraints.StringPredicate
   defp constraint_module(op) when op in @membership_ops, do: ExDatalog.Constraints.Membership
 end

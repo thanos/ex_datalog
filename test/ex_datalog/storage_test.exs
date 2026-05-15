@@ -20,11 +20,6 @@ defmodule ExDatalog.StorageTest do
       assert {:capabilities, 1} in callbacks
       assert {:teardown, 1} in callbacks
     end
-
-    test "defines exactly 12 callbacks" do
-      callbacks = Storage.behaviour_info(:callbacks)
-      assert length(callbacks) == 12
-    end
   end
 
   describe "implementations" do

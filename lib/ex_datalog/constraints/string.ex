@@ -1,4 +1,4 @@
-defmodule ExDatalog.Constraints.String do
+defmodule ExDatalog.Constraints.StringPredicate do
   @moduledoc """
   String predicate constraint implementation for the Constraint behaviour.
 

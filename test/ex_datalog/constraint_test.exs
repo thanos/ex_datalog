@@ -351,25 +351,14 @@ defmodule ExDatalog.ConstraintTest do
   end
 
   describe "dispatch consistency" do
-    test "every op in @all_ops has a constraint_module dispatch" do
-      for op <- [
-            :gt,
-            :lt,
-            :gte,
-            :lte,
-            :eq,
-            :neq,
-            :add,
-            :sub,
-            :mul,
-            :div,
-            :is_integer,
-            :is_binary,
-            :is_atom,
-            :starts_with,
-            :contains,
-            :member
-          ] do
+    test "every category op dispatches without error" do
+      comparison_ops = [:gt, :lt, :gte, :lte, :eq, :neq]
+      arithmetic_ops = [:add, :sub, :mul, :div]
+      type_ops = [:is_integer, :is_binary, :is_atom]
+      string_ops = [:starts_with, :contains]
+      membership_ops = [:member]
+
+      for op <- comparison_ops ++ arithmetic_ops ++ type_ops ++ string_ops ++ membership_ops do
         c = %Constraint{op: op, left: @x, right: nil, result: nil}
         result = Constraint.evaluate(c, %{}, %ExDatalog.Constraint.Context{})
 
@@ -378,51 +367,48 @@ defmodule ExDatalog.ConstraintTest do
       end
     end
 
-    test "@type op territory matches @all_ops" do
-      all_ops = [
-        :gt,
-        :lt,
-        :gte,
-        :lte,
-        :eq,
-        :neq,
-        :add,
-        :sub,
-        :mul,
-        :div,
-        :is_integer,
-        :is_binary,
-        :is_atom,
-        :starts_with,
-        :contains,
-        :member
+    test "constraint_module/1 dispatches every category to the right module" do
+      modules = [
+        {ExDatalog.Constraints.Comparison, [:gt, :lt, :gte, :lte, :eq, :neq]},
+        {ExDatalog.Constraints.Arithmetic, [:add, :sub, :mul, :div]},
+        {ExDatalog.Constraints.Type, [:is_integer, :is_binary, :is_atom]},
+        {ExDatalog.Constraints.StringPredicate, [:starts_with, :contains]},
+        {ExDatalog.Constraints.Membership, [:member]}
       ]
 
+      for {module, ops} <- modules do
+        for op <- ops do
+          assert function_exported?(module, :evaluate, 3),
+                 "Expected #{inspect(module)} to export evaluate/3 for op #{inspect(op)}"
+        end
+      end
+
+      all_ops = Enum.flat_map(modules, fn {_mod, ops} -> ops end)
       assert length(all_ops) == 16
-      assert :gt in all_ops
-      assert :member in all_ops
-      assert :is_integer in all_ops
-      assert :starts_with in all_ops
+    end
 
-      for op <- all_ops do
-        c = %Constraint{op: op, left: @x, right: nil, result: nil}
+    test "valid?/1 returns true for all ops in @all_ops" do
+      valid_constraints = [
+        Constraint.gt(@x, @y),
+        Constraint.lt(@x, @y),
+        Constraint.gte(@x, @y),
+        Constraint.lte(@x, @y),
+        Constraint.eq(@x, @y),
+        Constraint.neq(@x, @y),
+        Constraint.add(@x, @y, @z),
+        Constraint.sub(@x, @y, @z),
+        Constraint.mul(@x, @y, @z),
+        Constraint.div(@x, @y, @z),
+        Constraint.type_integer(@x),
+        Constraint.type_binary(@x),
+        Constraint.type_atom(@x),
+        Constraint.starts_with(@x, Term.const("hello")),
+        Constraint.contains(@x, Term.const("ell")),
+        Constraint.member(@x, Term.const([:a, :b]))
+      ]
 
-        assert Constraint.valid?(c) or
-                 op in [
-                   :add,
-                   :sub,
-                   :mul,
-                   :div,
-                   :gt,
-                   :lt,
-                   :gte,
-                   :lte,
-                   :eq,
-                   :neq,
-                   :starts_with,
-                   :contains,
-                   :member
-                 ]
+      for c <- valid_constraints do
+        assert Constraint.valid?(c), "op #{inspect(c.op)} should be valid"
       end
     end
   end

@@ -5,15 +5,16 @@ defmodule ExDatalog.Constraint.Context do
   The context carries metadata about the current evaluation environment,
   including backend capabilities and provenance tracking settings.
 
-  ## v0.2.0 status
+  ## Threading
 
-  For v0.2.0, the context is **informational only** — no constraint
-  implementation reads from it. It is reserved for future constraint types
-  that may need to inspect capabilities (e.g., a future Z3 backend checking
-  `external_execution`) or provenance metadata.
+  The `Constraint.Context` is constructed by `Engine.Naive` from the storage
+  backend's capabilities and passed through `Evaluator` → `ConstraintEval`
+  → `Constraint.evaluate/3`. Constraint implementations receive it as the
+  third argument, enabling them to inspect storage capabilities if needed
+  (e.g., a future Z3 backend checking `external_execution`).
 
-  Do not remove this module: it is part of the public `Constraint.evaluate/3`
-  signature and will be used in a future release.
+  For v0.2.0, no constraint implementation reads from the context, but the
+  plumbing is complete and the context carries real backend capabilities.
   """
 
   alias ExDatalog.Capabilities

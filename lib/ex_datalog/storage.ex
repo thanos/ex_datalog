@@ -20,9 +20,9 @@ defmodule ExDatalog.Storage do
 
   ## Indexing
 
-  The following indexing callbacks are defined but **not used by the default
-  engine in v0.2.0**. They are exposed for alternative engine implementations
-  and future use:
+  The following indexing callbacks are **optional** (`@optional_callbacks`).
+  They are defined for alternative engine implementations and future use. The
+  default engine (`Engine.Naive`) does not use them.
 
   - `build_index/3` creates a hash index on the specified columns.
     Raises `ArgumentError` if `relation` is not in the schema.
@@ -67,4 +67,10 @@ defmodule ExDatalog.Storage do
   @callback relations(state) :: [relation_name]
   @callback capabilities(state) :: ExDatalog.Capabilities.t()
   @callback teardown(state) :: :ok | {:error, term()}
+
+  @optional_callbacks [
+    get_indexed: 4,
+    build_index: 3,
+    update_index: 4
+  ]
 end
