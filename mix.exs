@@ -99,8 +99,7 @@ defmodule ExDatalog.MixProject do
       licenses: ["MIT"],
       maintainers: ["Thanos Vassilakis"],
       links: %{"GitHub" => @source_url},
-      files:
-        ~w(lib .formatter.exs mix.exs README.md LICENSE CHANGELOG.md RELEASE.md RELEASE_NOTICE.md docs)
+      files: ~w(lib .formatter.exs mix.exs README.md LICENSE CHANGELOG.md docs)
     ]
   end
 
