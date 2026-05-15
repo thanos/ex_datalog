@@ -376,15 +376,24 @@ defmodule ExDatalog.ConstraintTest do
         {ExDatalog.Constraints.Membership, [:member]}
       ]
 
-      for {module, ops} <- modules do
+      for {_module, ops} <- modules do
+        all_ops = Enum.flat_map(modules, fn {_mod, ops} -> ops end)
+        assert length(all_ops) == 16
+
         for op <- ops do
-          assert function_exported?(module, :evaluate, 3),
-                 "Expected #{inspect(module)} to export evaluate/3 for op #{inspect(op)}"
+          ir = %ExDatalog.IR.Constraint{
+            op: op,
+            left: {:var, "X"},
+            right: {:var, "Y"},
+            result: nil
+          }
+
+          result = Constraint.evaluate(ir, %{}, %ExDatalog.Constraint.Context{})
+
+          assert result in [{:ok, %{}}, :filter, {:ok, %{"X" => 10}}],
+                 "op #{inspect(op)} should dispatch through Constraint.evaluate/3"
         end
       end
-
-      all_ops = Enum.flat_map(modules, fn {_mod, ops} -> ops end)
-      assert length(all_ops) == 16
     end
 
     test "valid?/1 returns true for all ops in @all_ops" do
