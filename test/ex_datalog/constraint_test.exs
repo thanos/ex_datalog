@@ -426,4 +426,47 @@ defmodule ExDatalog.ConstraintTest do
       end
     end
   end
+
+  describe "evaluate/3 — public struct dispatch" do
+    test "dispatches through public Constraint struct" do
+      c = Constraint.gt(@x, @y)
+
+      assert {:ok, %{"X" => 10, "Y" => 3}} =
+               Constraint.evaluate(c, %{"X" => 10, "Y" => 3}, %ExDatalog.Constraint.Context{})
+    end
+
+    test "dispatches comparison through public struct" do
+      c = Constraint.lt(@x, @c5)
+
+      assert {:ok, %{"X" => 3}} =
+               Constraint.evaluate(c, %{"X" => 3}, %ExDatalog.Constraint.Context{})
+
+      assert :filter = Constraint.evaluate(c, %{"X" => 10}, %ExDatalog.Constraint.Context{})
+    end
+
+    test "dispatches arithmetic through public struct" do
+      c = Constraint.add(@x, @y, @z)
+
+      assert {:ok, %{"X" => 3, "Y" => 7, "Z" => 10}} =
+               Constraint.evaluate(c, %{"X" => 3, "Y" => 7}, %ExDatalog.Constraint.Context{})
+    end
+
+    test "dispatches type predicate through public struct" do
+      c = Constraint.type_integer(@x)
+
+      assert {:ok, %{"X" => 42}} =
+               Constraint.evaluate(c, %{"X" => 42}, %ExDatalog.Constraint.Context{})
+
+      assert :filter = Constraint.evaluate(c, %{"X" => :atom}, %ExDatalog.Constraint.Context{})
+    end
+
+    test "dispatches membership through public struct" do
+      c = Constraint.member(@x, Term.const([:a, :b, :c]))
+
+      assert {:ok, %{"X" => :a}} =
+               Constraint.evaluate(c, %{"X" => :a}, %ExDatalog.Constraint.Context{})
+
+      assert :filter = Constraint.evaluate(c, %{"X" => :z}, %ExDatalog.Constraint.Context{})
+    end
+  end
 end

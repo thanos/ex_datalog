@@ -28,18 +28,45 @@ defmodule ExDatalog.Constraint.Context do
 
   @doc """
   Creates a new context with default capabilities.
+
+  ## Examples
+
+      iex> ctx = ExDatalog.Constraint.Context.new()
+      iex> ctx.capabilities.storage_type
+      :map
+      iex> ctx.provenance
+      false
+
   """
   @spec new() :: t()
   def new, do: %__MODULE__{}
 
   @doc """
   Creates a new context with the given capabilities.
+
+  ## Examples
+
+      iex> caps = %ExDatalog.Capabilities{storage_type: :ets, indexed_lookup: true}
+      iex> ctx = ExDatalog.Constraint.Context.new(caps)
+      iex> ctx.capabilities.storage_type
+      :ets
+      iex> ctx.provenance
+      false
+
   """
   @spec new(Capabilities.t()) :: t()
   def new(%Capabilities{} = capabilities), do: %__MODULE__{capabilities: capabilities}
 
   @doc """
   Creates a new context with the given capabilities and provenance flag.
+
+  ## Examples
+
+      iex> caps = %ExDatalog.Capabilities{storage_type: :ets}
+      iex> ctx = ExDatalog.Constraint.Context.new(caps, true)
+      iex> ctx.provenance
+      true
+
   """
   @spec new(Capabilities.t(), boolean()) :: t()
   def new(%Capabilities{} = capabilities, provenance) when is_boolean(provenance) do

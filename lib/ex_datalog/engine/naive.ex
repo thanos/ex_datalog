@@ -94,7 +94,7 @@ defmodule ExDatalog.Engine.Naive do
     try do
       case validate_stratification(ir) do
         {:error, _} = err ->
-          ExDatalog.Telemetry.emit_stop(start_time, 0, %{}, stratum_count)
+          ExDatalog.Telemetry.emit_stop(start_time, 0, %{}, stratum_count, :unknown)
           err
 
         :ok ->
@@ -156,59 +156,94 @@ defmodule ExDatalog.Engine.Naive do
           base_origins
         )
 
-      duration_us = System.monotonic_time(:microsecond) - start_time
-
-      relation_sizes =
-        schemas
-        |> Map.keys()
-        |> Enum.map(fn name -> {name, storage_mod.size(state_final, name)} end)
-        |> Map.new()
-
-      all_rels =
-        schemas
-        |> Map.keys()
-        |> Enum.map(fn name ->
-          {name, storage_mod.stream(state_final, name) |> MapSet.new()}
-        end)
-        |> Map.new()
+      result =
+        build_result(
+          state_final,
+          schemas,
+          storage_mod,
+          total_iterations,
+          start_time,
+          explain,
+          ir,
+          origins
+        )
 
       caps = storage_mod.capabilities(state_final)
 
-      provenance =
-        if explain do
-          rules_map = Map.new(ir.rules, fn r -> {r.id, r} end)
-
-          %{
-            fact_origins: origins,
-            rules: rules_map
-          }
-        else
-          nil
-        end
-
-      result = %Result{
-        relations: all_rels,
-        stats: %{
-          iterations: total_iterations,
-          duration_us: duration_us,
-          relation_sizes: relation_sizes,
-          capabilities: caps
-        },
-        provenance: provenance
-      }
-
-      ExDatalog.Telemetry.emit_stop(
+      emit_result_telemetry(
         start_time,
         total_iterations,
-        relation_sizes,
-        stratum_count,
-        caps.storage_type
+        result,
+        caps,
+        stratum_count
       )
 
       {:ok, result}
     after
       storage_mod.teardown(state0)
     end
+  end
+
+  defp build_result(
+         state,
+         schemas,
+         storage_mod,
+         total_iterations,
+         start_time,
+         explain,
+         ir,
+         origins
+       ) do
+    duration_us = System.monotonic_time(:microsecond) - start_time
+
+    relation_sizes =
+      schemas
+      |> Map.keys()
+      |> Enum.map(fn name -> {name, storage_mod.size(state, name)} end)
+      |> Map.new()
+
+    all_rels =
+      schemas
+      |> Map.keys()
+      |> Enum.map(fn name ->
+        {name, storage_mod.stream(state, name) |> MapSet.new()}
+      end)
+      |> Map.new()
+
+    caps = storage_mod.capabilities(state)
+
+    provenance =
+      if explain do
+        rules_map = Map.new(ir.rules, fn r -> {r.id, r} end)
+
+        %{
+          fact_origins: origins,
+          rules: rules_map
+        }
+      else
+        nil
+      end
+
+    %Result{
+      relations: all_rels,
+      stats: %{
+        iterations: total_iterations,
+        duration_us: duration_us,
+        relation_sizes: relation_sizes,
+        capabilities: caps
+      },
+      provenance: provenance
+    }
+  end
+
+  defp emit_result_telemetry(start_time, total_iterations, result, caps, stratum_count) do
+    ExDatalog.Telemetry.emit_stop(
+      start_time,
+      total_iterations,
+      result.stats.relation_sizes,
+      stratum_count,
+      caps.storage_type
+    )
   end
 
   defp init_base_origins(facts) do

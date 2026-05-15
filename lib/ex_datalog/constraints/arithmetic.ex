@@ -14,6 +14,7 @@ defmodule ExDatalog.Constraints.Arithmetic do
   @behaviour ExDatalog.Constraint
 
   alias ExDatalog.Constraint.Context
+  alias ExDatalog.Engine.Binding
   alias ExDatalog.IR
 
   @impl ExDatalog.Constraint
@@ -25,8 +26,8 @@ defmodule ExDatalog.Constraints.Arithmetic do
   is bound), or `:filter` when division by zero occurs or an input variable
   is unbound.
   """
-  @spec evaluate(IR.Constraint.t(), map(), Context.t()) ::
-          {:ok, map()} | :filter
+  @spec evaluate(IR.Constraint.t(), Binding.t(), Context.t()) ::
+          {:ok, Binding.t()} | :filter
   def evaluate(
         %IR.Constraint{op: op, left: left, right: right, result: result},
         binding,

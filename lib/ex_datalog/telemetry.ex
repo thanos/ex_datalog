@@ -91,7 +91,7 @@ defmodule ExDatalog.Telemetry do
           non_neg_integer(),
           atom()
         ) :: :ok
-  def emit_stop(start_time, iterations, relation_sizes, stratum_count, storage_type \\ :map) do
+  def emit_stop(start_time, iterations, relation_sizes, stratum_count, storage_type) do
     :telemetry.execute(
       query_stop(),
       %{duration: System.monotonic_time(:microsecond) - start_time, iterations: iterations},

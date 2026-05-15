@@ -66,5 +66,5 @@ defmodule ExDatalog.Storage do
   @callback update_index(state, relation_name, index_key, Enumerable.t()) :: state
   @callback relations(state) :: [relation_name]
   @callback capabilities(state) :: ExDatalog.Capabilities.t()
-  @callback teardown(state) :: :ok
+  @callback teardown(state) :: :ok | {:error, term()}
 end

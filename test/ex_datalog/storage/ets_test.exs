@@ -160,4 +160,23 @@ defmodule ExDatalog.Storage.ETSTest do
       ETS.teardown(state)
     end
   end
+
+  describe "post-teardown guard" do
+    test "operations raise ArgumentError after teardown" do
+      state = ETS.init(@schemas)
+      state = ETS.insert(state, "parent", {:alice, :bob})
+      ETS.teardown(state)
+
+      assert_raise ArgumentError, ~r/torn down/, fn ->
+        ETS.insert(state, "parent", {:carol, :dave})
+      end
+    end
+
+    test "teardown skips already-deleted tables" do
+      state = ETS.init(@schemas)
+      [{_name, ref} | _] = Map.to_list(state.tables)
+      :ets.delete(ref)
+      assert :ok == ETS.teardown(state)
+    end
+  end
 end

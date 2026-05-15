@@ -42,8 +42,10 @@ defmodule ExDatalog.Constraint do
   - Membership op (`member`) dispatch to
     `ExDatalog.Constraints.Membership`.
 
-  New constraint types can be added by implementing the behaviour and
-  registering their `op` in the dispatch table.
+  New constraint types require adding the `op` to the relevant category list
+  and a dispatch clause in `constraint_module/1` within this module. The
+  dispatch is closed (not a runtime registry) to keep evaluation deterministic
+  and easily auditable.
 
   ## Comparison operators
 
@@ -109,6 +111,7 @@ defmodule ExDatalog.Constraint do
 
   """
 
+  alias ExDatalog.IR
   alias ExDatalog.Term
 
   @comparison_ops [:gt, :lt, :gte, :lte, :eq, :neq]
@@ -602,15 +605,19 @@ defmodule ExDatalog.Constraint do
   """
   @callback evaluate(
               constraint :: ExDatalog.IR.Constraint.t(),
-              bindings :: map(),
+              bindings :: ExDatalog.Engine.Binding.t(),
               context :: ExDatalog.Constraint.Context.t()
             ) ::
-              {:ok, map()} | :filter
+              {:ok, ExDatalog.Engine.Binding.t()} | :filter
 
-  @spec evaluate(t() | ExDatalog.IR.Constraint.t(), map(), ExDatalog.Constraint.Context.t()) ::
-          {:ok, map()} | :filter
+  @spec evaluate(
+          t() | ExDatalog.IR.Constraint.t(),
+          ExDatalog.Engine.Binding.t(),
+          ExDatalog.Constraint.Context.t()
+        ) ::
+          {:ok, ExDatalog.Engine.Binding.t()} | :filter
   def evaluate(%__MODULE__{} = constraint, binding, context) do
-    ir_constraint = ExDatalog.IR.from_constraint(constraint)
+    ir_constraint = IR.from_constraint(constraint)
     evaluate(ir_constraint, binding, context)
   end
 

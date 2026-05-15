@@ -1,10 +1,13 @@
 defmodule ExDatalog.Storage.ETS do
+  require Logger
+
   @moduledoc """
   ETS-based storage implementation using per-relation tables.
 
   This backend stores facts in ETS tables (one per relation), providing
   off-heap storage that reduces GC pressure for large fact sets (>100K tuples)
-  and enables concurrent read access.
+  and enables concurrent read access. Tables are named `ex_datalog_<relation>`
+  for observability in `:observer` and `iex`.
 
   ## Key design: wrapped tuples
 
@@ -14,6 +17,15 @@ defmodule ExDatalog.Storage.ETS do
   wraps every fact tuple in a 1-element tuple: `{{:alice, :bob}}`. The wrapped
   tuple's sole element — the entire original tuple — becomes the ETS key,
   guaranteeing set semantics matching `Storage.Map`.
+
+  ## Choice of `:set` table type
+
+  This backend uses `:set` ETS tables rather than `:ordered_set`. Although
+  `:ordered_set` would provide sorted traversal for free, it imposes a total
+  ordering using term comparison that differs from Elixir's `Enum.sort/1`.
+  Using `:set` with explicit `Enum.sort/1` in `stream/2` guarantees the same
+  deterministic ordering as `Storage.Map`, which is essential for the
+  cross-backend conformance guarantee.
 
   ## Trade-offs vs Storage.Map
 
@@ -98,7 +110,7 @@ defmodule ExDatalog.Storage.ETS do
           write_concurrency: write_concurrency
         ]
 
-        ref = :ets.new(:ex_datalog_ets, table_opts)
+        ref = :ets.new(String.to_atom("ex_datalog_#{name}"), table_opts)
         {name, ref}
       end)
 
@@ -182,8 +194,12 @@ defmodule ExDatalog.Storage.ETS do
     guard_not_tombstoned!(state)
 
     case Map.fetch(tables, relation) do
-      {:ok, ref} -> :ets.info(ref, :size)
-      :error -> 0
+      {:ok, ref} ->
+        :ets.info(ref, :size)
+
+      :error ->
+        Logger.debug("size/2 called on unknown relation #{inspect(relation)}")
+        0
     end
   end
 
@@ -257,7 +273,7 @@ defmodule ExDatalog.Storage.ETS do
     case Map.fetch(tables, relation) do
       {:ok, ref} ->
         index_data = build_index_from_table(ref, columns)
-        index_ref = :ets.new(:ex_datalog_index, [:set, :private])
+        index_ref = :ets.new(String.to_atom("ex_datalog_idx_#{relation}"), [:set, :private])
 
         Enum.each(index_data, fn {key, tuples_set} ->
           :ets.insert(index_ref, {key, tuples_set})
@@ -416,7 +432,7 @@ defmodule ExDatalog.Storage.ETS do
     case Map.fetch(tables, relation) do
       {:ok, ref} ->
         index_data = build_index_from_table(ref, columns)
-        new_ref = :ets.new(:ex_datalog_index, [:set, :private])
+        new_ref = :ets.new(String.to_atom("ex_datalog_idx_#{relation}"), [:set, :private])
         Enum.each(index_data, fn {k, tuples} -> :ets.insert(new_ref, {k, tuples}) end)
         {new_ref, Map.put(indexes, key, new_ref)}
 

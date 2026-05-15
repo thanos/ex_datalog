@@ -10,6 +10,7 @@ defmodule ExDatalog.Constraints.Type do
   @behaviour ExDatalog.Constraint
 
   alias ExDatalog.Constraint.Context
+  alias ExDatalog.Engine.Binding
   alias ExDatalog.IR
 
   @impl ExDatalog.Constraint
@@ -20,8 +21,8 @@ defmodule ExDatalog.Constraints.Type do
   `{:ok, binding}` (unchanged) when the type check passes, or `:filter`
   when it fails or the input variable is unbound.
   """
-  @spec evaluate(IR.Constraint.t(), map(), Context.t()) ::
-          {:ok, map()} | :filter
+  @spec evaluate(IR.Constraint.t(), Binding.t(), Context.t()) ::
+          {:ok, Binding.t()} | :filter
   def evaluate(%IR.Constraint{op: op, left: left}, binding, _context) do
     case IR.resolve_operand(left, binding) do
       {:ok, value} ->

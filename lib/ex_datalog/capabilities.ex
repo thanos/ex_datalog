@@ -147,7 +147,7 @@ defmodule ExDatalog.Capabilities do
       true
 
   """
-  @spec from_backend({module(), term()}) :: t()
+  @spec from_backend({atom(), term()}) :: t()
   def from_backend({storage_mod, state}) when is_atom(storage_mod) do
     storage_mod.capabilities(state)
   end

@@ -11,6 +11,7 @@ defmodule ExDatalog.Constraints.Membership do
   @behaviour ExDatalog.Constraint
 
   alias ExDatalog.Constraint.Context
+  alias ExDatalog.Engine.Binding
   alias ExDatalog.IR
 
   @impl ExDatalog.Constraint
@@ -21,8 +22,8 @@ defmodule ExDatalog.Constraints.Membership do
   `{:ok, binding}` (unchanged) when the left value is a member of the
   right list, or `:filter` when it is not or the left variable is unbound.
   """
-  @spec evaluate(IR.Constraint.t(), map(), Context.t()) ::
-          {:ok, map()} | :filter
+  @spec evaluate(IR.Constraint.t(), Binding.t(), Context.t()) ::
+          {:ok, Binding.t()} | :filter
   def evaluate(%IR.Constraint{left: left, right: right}, binding, _context) do
     with {:ok, value} <- IR.resolve_operand(left, binding),
          {:ok, list} <- resolve_list(right) do
@@ -32,8 +33,7 @@ defmodule ExDatalog.Constraints.Membership do
         :filter
       end
     else
-      :unbound -> :filter
-      :invalid_list -> :filter
+      _ -> :filter
     end
   end
 

@@ -1,4 +1,6 @@
 defmodule ExDatalog.Storage.Map do
+  require Logger
+
   @moduledoc """
   Map-based storage implementation using Maps and MapSets.
 
@@ -130,8 +132,12 @@ defmodule ExDatalog.Storage.Map do
   @spec size(t(), ExDatalog.Storage.relation_name()) :: non_neg_integer()
   def size(%__MODULE__{relations: rels}, relation) do
     case Map.fetch(rels, relation) do
-      {:ok, set} -> MapSet.size(set)
-      :error -> 0
+      {:ok, set} ->
+        MapSet.size(set)
+
+      :error ->
+        Logger.debug("size/2 called on unknown relation #{inspect(relation)}")
+        0
     end
   end
 

@@ -13,6 +13,7 @@ defmodule ExDatalog.Constraints.Comparison do
   @behaviour ExDatalog.Constraint
 
   alias ExDatalog.Constraint.Context
+  alias ExDatalog.Engine.Binding
   alias ExDatalog.IR
 
   @impl ExDatalog.Constraint
@@ -23,8 +24,8 @@ defmodule ExDatalog.Constraints.Comparison do
   `{:ok, binding}` (unchanged) when the comparison succeeds, or `:filter`
   when it fails or an input variable is unbound.
   """
-  @spec evaluate(IR.Constraint.t(), map(), Context.t()) ::
-          {:ok, map()} | :filter
+  @spec evaluate(IR.Constraint.t(), Binding.t(), Context.t()) ::
+          {:ok, Binding.t()} | :filter
   def evaluate(%IR.Constraint{op: op, left: left, right: right}, binding, _context) do
     with {:ok, left_val} <- IR.resolve_operand(left, binding),
          {:ok, right_val} <- IR.resolve_operand(right, binding) do
