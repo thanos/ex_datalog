@@ -63,9 +63,9 @@ The classic Datalog example: compute all ancestors from parent facts.
 
 ```elixir
 alias ExDatalog
-alias ExDatalog.{Program, Rule, Atom, Term}
+alias ExDatalog.{Program, Knowledge}
 
-{:ok, result} =
+{:ok, knowledge} =
   Program.new()
   |> Program.add_relation("parent", [:atom, :atom])
   |> Program.add_relation("ancestor", [:atom, :atom])
@@ -73,33 +73,52 @@ alias ExDatalog.{Program, Rule, Atom, Term}
   |> Program.add_fact("parent", [:bob, :carol])
   |> Program.add_fact("parent", [:carol, :dave])
   |> Program.add_rule(
-       Rule.new(
-         Atom.new("ancestor", [Term.var("X"), Term.var("Y")]),
-         [{:positive, Atom.new("parent", [Term.var("X"), Term.var("Y")])}]
-       )
-     )
+    {"ancestor", [:X, :Y]},
+    [{:positive, {"parent", [:X, :Y]}}]
+  )
   |> Program.add_rule(
-       Rule.new(
-         Atom.new("ancestor", [Term.var("X"), Term.var("Z")]),
-         [
-           {:positive, Atom.new("parent", [Term.var("X"), Term.var("Y")])},
-           {:positive, Atom.new("ancestor", [Term.var("Y"), Term.var("Z")])}
-         ]
-       )
-     )
-  |> ExDatalog.query()
+    {"ancestor", [:X, :Z]},
+    [
+      {:positive, {"parent", [:X, :Y]}},
+      {:positive, {"ancestor", [:Y, :Z]}}
+    ]
+  )
+  |> ExDatalog.materialize()
 
-result.relations["ancestor"]
+Knowledge.get(knowledge, "ancestor")
 #=> MapSet.new([{:alice, :bob}, {:bob, :carol}, {:carol, :dave},
 #=>             {:alice, :carol}, {:bob, :dave}, {:alice, :dave}])
 ```
+
+### Shorthand rule notation
+
+`add_rule/3` and `add_rule/4` use a tuple-based shorthand that follows
+Prolog convention: uppercase atoms become variables, `:_` becomes a wildcard,
+and lowercase atoms/other values become constants.
+
+```elixir
+# Base rule: ancestor(X,Y) :- parent(X,Y).
+Program.add_rule(program, {"ancestor", [:X, :Y]}, [{:positive, {"parent", [:X, :Y]}}])
+
+# With constraints — find high earners:
+Program.add_rule(program, {"high_earner", [:X]}, [{:positive, {"income", [:X, :S]}}], [{:gt, :S, 100_000}])
+
+# Negation — bachelors are males who are not married:
+Program.add_rule(program, {"bachelor", [:X]}, [
+  {:positive, {"male", [:X]}},
+  {:negative, {"married", [:X, :_]}}
+])
+```
+
+The struct-based `add_rule/2` with `Rule.new/3` remains available for
+full control over term types.
 
 ### Arithmetic constraints
 
 Compute derived values in rules. Find numbers and their doubles:
 
 ```elixir
-{:ok, result} =
+{:ok, knowledge} =
   Program.new()
   |> Program.add_relation("number", [:integer])
   |> Program.add_relation("doubled", [:integer, :integer])
@@ -107,15 +126,13 @@ Compute derived values in rules. Find numbers and their doubles:
   |> Program.add_fact("number", [2])
   |> Program.add_fact("number", [3])
   |> Program.add_rule(
-       Rule.new(
-         Atom.new("doubled", [Term.var("X"), Term.var("Y")]),
-         [{:positive, Atom.new("number", [Term.var("X")])}],
-         [Constraint.add(Term.var("X"), {:const, 2}, Term.var("Y"))]
-       )
-     )
-  |> ExDatalog.query()
+    {"doubled", [:X, :Y]},
+    [{:positive, {"number", [:X]}}],
+    [{:add, :X, 2, :Y}]
+  )
+  |> ExDatalog.materialize()
 
-result.relations["doubled"]
+Knowledge.get(knowledge, "doubled")
 #=> MapSet.new([{1, 3}, {2, 4}, {3, 5}])
 ```
 
@@ -125,24 +142,21 @@ Filter bindings by Elixir type or list membership:
 
 ```elixir
 # Keep only integer values from a mixed-type relation
-Rule.new(
-  Atom.new("int_value", [Term.var("X")]),
-  [{:positive, Atom.new("value", [Term.var("X")])}],
-  [Constraint.type_integer(Term.var("X"))]
+Program.add_rule(program, {"int_value", [:N, :V]},
+  [{:positive, {"value", [:N, :V]}}],
+  [{:is_integer, :V}]
 )
 
 # Keep only "primary" colors
-Rule.new(
-  Atom.new("primary_color", [Term.var("X")]),
-  [{:positive, Atom.new("color", [Term.var("X")])}],
-  [Constraint.member(Term.var("X"), {:const, [:red, :blue, :green]})]
+Program.add_rule(program, {"primary_color", [:X]},
+  [{:positive, {"color", [:X]}}],
+  [{:member, :X, [:red, :blue, :green]}]
 )
 
 # Keep only strings that start with "hel"
-Rule.new(
-  Atom.new("hello_word", [Term.var("X")]),
-  [{:positive, Atom.new("word", [Term.var("X")])}],
-  [Constraint.starts_with(Term.var("X"), {:const, "hel"})]
+Program.add_rule(program, {"hello_word", [:X]},
+  [{:positive, {"word", [:X]}}],
+  [{:starts_with, :X, "hel"}]
 )
 ```
 
@@ -151,15 +165,10 @@ Rule.new(
 Use negative body atoms with stratified evaluation. Find people who are not parents:
 
 ```elixir
-Program.add_rule(
-  Rule.new(
-    Atom.new("childless", [Term.var("X")]),
-    [
-      {:positive, Atom.new("person", [Term.var("X")])},
-      {:negative, Atom.new("parent", [Term.var("X"), Term.wildcard()])}
-    ]
-  )
-)
+Program.add_rule(program, {"childless", [:X]}, [
+  {:positive, {"person", [:X]}},
+  {:negative, {"parent", [:X, :_]}}
+])
 ```
 
 ### ETS backend
@@ -168,11 +177,11 @@ For workloads exceeding ~100K facts, use the ETS backend for off-heap storage
 and reduced GC pressure:
 
 ```elixir
-{:ok, result} = ExDatalog.query(program, storage: ExDatalog.Storage.ETS)
+{:ok, knowledge} = ExDatalog.materialize(program, storage: ExDatalog.Storage.ETS)
 
 # Or with options:
-{:ok, result} =
-  ExDatalog.query(program,
+{:ok, knowledge} =
+  ExDatalog.materialize(program,
     storage: ExDatalog.Storage.ETS,
     storage_opts: [access: :public, write_concurrency: true]
   )
@@ -183,18 +192,18 @@ and reduced GC pressure:
 Track which rule derived each fact:
 
 ```elixir
-{:ok, result} = ExDatalog.query(program, explain: true)
-result.provenance.fact_origins
+{:ok, knowledge} = ExDatalog.materialize(program, explain: true)
+knowledge.provenance.fact_origins
 #=> %{"ancestor" => %{{:alice, :bob} => "rule_0", ...}, ...}
 ```
 
 ### Telemetry
 
 ExDatalog emits `:telemetry` events at the start, end, and on exceptions
-during query evaluation:
+during materialization:
 
 ```elixir
-:telemetry.attach("my-handler", [:ex_datalog, :query, :stop], &handle_stop/4, nil)
+:telemetry.attach("my-handler", [:ex_datalog, :materialize, :stop], &handle_stop/4, nil)
 
 def handle_stop(_event, measurements, metadata, _config) do
   IO.puts("Query completed in #{measurements.duration} µs (#{measurements.iterations} iterations)")
@@ -223,7 +232,7 @@ ExDatalog.Engine.Naive  (semi-naive fixpoint)
 ExDatalog.Storage.Map | ExDatalog.Storage.ETS
         |
         v
-ExDatalog.Result
+ExDatalog.Knowledge
 ```
 
 The `Storage` behaviour defines the contract for pluggable backends.
@@ -338,8 +347,9 @@ The following references are highly recommended for understanding both the theor
 | Version | Description |
 |---|---|
 | v0.2.0 | ETS backend, constraint behaviour, type/string/membership predicates, capabilities, provenance, telemetry |
-| v0.3.0 | Aggregation (`count`, `sum`, `min`, `max`), general predicates as deterministic BEAM callbacks |
-| v0.4.0 | Magic sets / demand-driven evaluation, external solver adapter (experimental Z3/Soufflé) |
+| v0.3.0 | Tuple shorthand for rules (`add_rule/3`, `add_rule/4`), `Term.from/1`, `ExDatalog.Atom.from_tuple/1`, `Constraint.from_tuple/1` |
+| v0.4.0 | Sigil DSL (`~d`), aggregation (`count`, `sum`, `min`, `max`), general predicates as deterministic BEAM callbacks |
+| v0.5.0 | Magic sets / demand-driven evaluation, external solver adapter (experimental Z3/Soufflé) |
 | v1.0.0 | Stable public API, hardened production semantics |
 
 ## License

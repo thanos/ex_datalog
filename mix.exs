@@ -111,9 +111,9 @@ defmodule ExDatalog.MixProject do
       extras: [
         "README.md",
         "CHANGELOG.md",
-        "docs/what-is-datalog.md",
-        "docs/constraints.md",
-        "docs/storage_backends.md"
+        {"docs/what-is-datalog.md", filename: "what-is-datalog", title: "What is Datalog?"},
+        {"docs/constraints.md", filename: "constraints", title: "Constraints"},
+        {"docs/storage_backends.md", filename: "storage-backends", title: "Storage Backends"}
       ],
       groups_for_modules: [
         "Program Builder": [
@@ -132,8 +132,8 @@ defmodule ExDatalog.MixProject do
         "Compiler & IR": ~r/ExDatalog\.(Compiler|IR).*/,
         Engine: ~r/ExDatalog\.Engine.*/,
         Storage: ~r/ExDatalog\.Storage.*/,
-        Results: [
-          ExDatalog.Result,
+        Knowledge: [
+          ExDatalog.Knowledge,
           ExDatalog.Explain,
           ExDatalog.Telemetry
         ]

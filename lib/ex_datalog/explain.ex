@@ -1,8 +1,8 @@
 defmodule ExDatalog.Explain do
   @moduledoc """
-  Derivation tree explanation for Datalog query results.
+  Derivation tree explanation for Datalog knowledge.
 
-  When a query is executed with `explain: true`, the result includes provenance
+  When a program is materialized with `explain: true`, the knowledge base includes provenance
   data recording which rule derived each fact. This module reconstructs the
   derivation tree from that provenance data.
 
@@ -20,14 +20,14 @@ defmodule ExDatalog.Explain do
 
   ## Usage
 
-      {:ok, result} = ExDatalog.query(program, explain: true)
-      {:ok, tree} = ExDatalog.Explain.explain(result, "ancestor", {:alice, :carol})
+      {:ok, knowledge} = ExDatalog.materialize(program, explain: true)
+      {:ok, tree} = ExDatalog.Explain.explain(knowledge, "ancestor", {:alice, :carol})
 
   The tree shows how the fact was derived, recursively expanding each derived
   body atom back to its own derivation. EDB facts terminate as `:base_fact`.
   """
 
-  alias ExDatalog.{IR, Result}
+  alias ExDatalog.{IR, Knowledge}
 
   defmodule Node do
     @moduledoc """
@@ -76,18 +76,18 @@ defmodule ExDatalog.Explain do
       ...>       [{:positive, Atom.new("parent", [Term.var("X"), Term.var("Y")])}]
       ...>     )
       ...>   )
-      iex> {:ok, result} = ExDatalog.query(program, explain: true)
-      iex> {:ok, tree} = Explain.explain(result, "ancestor", {:alice, :bob})
+      iex> {:ok, knowledge} = ExDatalog.materialize(program, explain: true)
+      iex> {:ok, tree} = Explain.explain(knowledge, "ancestor", {:alice, :bob})
       iex> tree.rule_id
       0
   """
-  @spec explain(Result.t(), String.t(), tuple()) ::
+  @spec explain(Knowledge.t(), String.t(), tuple()) ::
           {:ok, derivation()} | {:error, :no_provenance | :not_found}
-  def explain(%Result{provenance: nil}, _relation, _tuple) do
+  def explain(%Knowledge{provenance: nil}, _relation, _tuple) do
     {:error, :no_provenance}
   end
 
-  def explain(%Result{provenance: provenance}, relation, tuple) do
+  def explain(%Knowledge{provenance: provenance}, relation, tuple) do
     %{fact_origins: origins} = provenance
     build_tree(relation, tuple, origins, provenance.rules, %{})
   end

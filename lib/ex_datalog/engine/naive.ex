@@ -53,7 +53,7 @@ defmodule ExDatalog.Engine.Naive do
 
   alias ExDatalog.Engine.Evaluator
   alias ExDatalog.IR
-  alias ExDatalog.Result
+  alias ExDatalog.Knowledge
 
   @default_max_iterations 10_000
   @default_timeout_ms 30_000
@@ -72,7 +72,7 @@ defmodule ExDatalog.Engine.Naive do
   Evaluates a compiled IR program to fixpoint.
 
   Accepts a compiled `IR.t()` struct (from `Compiler.compile/1`) and an
-  optional keyword list of options. Returns `{:ok, %Result{}}` on success
+  optional keyword list of options. Returns `{:ok, %Knowledge{}}` on success
   or `{:error, reason}` on failure.
 
   ## Options
@@ -85,7 +85,7 @@ defmodule ExDatalog.Engine.Naive do
 
   See `#{inspect(__MODULE__)}` moduledoc for algorithm details.
   """
-  @spec evaluate(IR.t(), keyword()) :: {:ok, Result.t()} | {:error, term()}
+  @spec evaluate(IR.t(), keyword()) :: {:ok, Knowledge.t()} | {:error, term()}
   def evaluate(%IR{} = ir, opts \\ []) do
     ExDatalog.Telemetry.emit_start(ir)
     start_time = System.monotonic_time(:microsecond)
@@ -229,7 +229,7 @@ defmodule ExDatalog.Engine.Naive do
         nil
       end
 
-    %Result{
+    %Knowledge{
       relations: all_rels,
       stats: %{
         iterations: total_iterations,

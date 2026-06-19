@@ -455,13 +455,85 @@ defmodule ExDatalog.ConstraintTest do
       assert :filter = Constraint.evaluate(c, %{"X" => :atom}, %ExDatalog.Constraint.Context{})
     end
 
-    test "dispatches membership through public struct" do
+test "dispatches membership through public struct" do
       c = Constraint.member(@x, Term.const([:a, :b, :c]))
 
       assert {:ok, %{"X" => :a}} =
-               Constraint.evaluate(c, %{"X" => :a}, %ExDatalog.Constraint.Context{})
+                Constraint.evaluate(c, %{"X" => :a}, %ExDatalog.Constraint.Context{})
 
       assert :filter = Constraint.evaluate(c, %{"X" => :z}, %ExDatalog.Constraint.Context{})
+    end
+  end
+
+  describe "from_tuple/1" do
+    test "creates comparison constraint from shorthand" do
+      c = Constraint.from_tuple({:neq, :A, :B})
+      assert c == Constraint.neq(Term.var("A"), Term.var("B"))
+    end
+
+    test "creates gt constraint from shorthand with constant" do
+      c = Constraint.from_tuple({:gt, :S, 100_000})
+      assert c == Constraint.gt(Term.var("S"), Term.const(100_000))
+    end
+
+    test "creates arithmetic constraint from shorthand" do
+      c = Constraint.from_tuple({:add, :X, :Y, :Z})
+      assert c == Constraint.add(Term.var("X"), Term.var("Y"), Term.var("Z"))
+    end
+
+    test "creates sub constraint from shorthand" do
+      c = Constraint.from_tuple({:sub, :X, :C, :Y})
+      assert c == Constraint.sub(Term.var("X"), Term.var("C"), Term.var("Y"))
+    end
+
+    test "creates type predicate from shorthand" do
+      c = Constraint.from_tuple({:is_integer, :V})
+      assert c == Constraint.type_integer(Term.var("V"))
+    end
+
+    test "creates string predicate from shorthand" do
+      c = Constraint.from_tuple({:starts_with, :E, "admin."})
+      assert c == Constraint.starts_with(Term.var("E"), Term.const("admin."))
+    end
+
+    test "creates membership constraint from shorthand" do
+      c = Constraint.from_tuple({:member, :Dept, [:engineering, :infra]})
+      assert c == Constraint.member(Term.var("Dept"), Term.const([:engineering, :infra]))
+    end
+
+    test "passes through existing Constraint struct" do
+      original = Constraint.neq(@x, @y)
+      assert Constraint.from_tuple(original) == original
+    end
+
+    test "creates all comparison ops from shorthand" do
+      for op <- [:gt, :lt, :gte, :lte, :eq, :neq] do
+        c = Constraint.from_tuple({op, :A, :B})
+        assert c.op == op
+        assert c.left == {:var, "A"}
+        assert c.right == {:var, "B"}
+        assert c.result == nil
+      end
+    end
+
+    test "creates all arithmetic ops from shorthand" do
+      for op <- [:add, :sub, :mul, :div] do
+        c = Constraint.from_tuple({op, :X, :Y, :Z})
+        assert c.op == op
+        assert c.left == {:var, "X"}
+        assert c.right == {:var, "Y"}
+        assert c.result == {:var, "Z"}
+      end
+    end
+
+    test "creates all type predicate ops from shorthand" do
+      for op <- [:is_integer, :is_binary, :is_atom] do
+        c = Constraint.from_tuple({op, :V})
+        assert c.op == op
+        assert c.left == {:var, "V"}
+        assert c.right == nil
+        assert c.result == nil
+      end
     end
   end
 end

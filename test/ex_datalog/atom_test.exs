@@ -98,4 +98,26 @@ defmodule ExDatalog.AtomTest do
       assert Atom.valid?(%Atom{relation: nil, terms: []}) == false
     end
   end
+
+  describe "from_tuple/1" do
+    test "creates atom from shorthand tuple with variables" do
+      atom = Atom.from_tuple({"parent", [:X, :Y]})
+      assert atom == %Atom{relation: "parent", terms: [{:var, "X"}, {:var, "Y"}]}
+    end
+
+    test "creates atom from shorthand tuple with wildcard" do
+      atom = Atom.from_tuple({"role", [:User, :_]})
+      assert atom == %Atom{relation: "role", terms: [{:var, "User"}, :wildcard]}
+    end
+
+    test "creates atom from shorthand tuple with constants" do
+      atom = Atom.from_tuple({"value", [:X, 42]})
+      assert atom == %Atom{relation: "value", terms: [{:var, "X"}, {:const, 42}]}
+    end
+
+    test "passes through existing Atom struct" do
+      original = Atom.new("parent", [Term.var("X"), Term.var("Y")])
+      assert Atom.from_tuple(original) == original
+    end
+  end
 end

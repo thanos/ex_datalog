@@ -27,11 +27,11 @@ defmodule ExDatalog.IntegrationTest do
             ]
           )
         )
-        |> ExDatalog.query()
+        |> ExDatalog.materialize()
 
       assert {:ok, result} = result
 
-      ancestor = ExDatalog.Result.get(result, "ancestor")
+      ancestor = ExDatalog.Knowledge.get(result, "ancestor")
       assert MapSet.size(ancestor) == 6
 
       assert {:alice, :bob} in ancestor
@@ -55,10 +55,10 @@ defmodule ExDatalog.IntegrationTest do
             [{:positive, Atom.new("edge", [Term.var("X"), Term.var("Y")])}]
           )
         )
-        |> ExDatalog.query()
+        |> ExDatalog.materialize()
 
       assert {:ok, result} = result
-      path = ExDatalog.Result.get(result, "path")
+      path = ExDatalog.Knowledge.get(result, "path")
       assert MapSet.size(path) == 2
       assert {:a, :b} in path
       assert {:b, :c} in path
@@ -70,10 +70,10 @@ defmodule ExDatalog.IntegrationTest do
         |> Program.add_relation("person", [:atom])
         |> Program.add_fact("person", [:alice])
         |> Program.add_fact("person", [:bob])
-        |> ExDatalog.query()
+        |> ExDatalog.materialize()
 
       assert {:ok, result} = result
-      person = ExDatalog.Result.get(result, "person")
+      person = ExDatalog.Knowledge.get(result, "person")
       assert MapSet.size(person) == 2
     end
 
@@ -95,10 +95,10 @@ defmodule ExDatalog.IntegrationTest do
             ]
           )
         )
-        |> ExDatalog.query()
+        |> ExDatalog.materialize()
 
       assert {:ok, result} = result
-      path3 = ExDatalog.Result.get(result, "path3")
+      path3 = ExDatalog.Knowledge.get(result, "path3")
       assert MapSet.size(path3) == 1
       assert {:a, :b, :c} in path3
     end
@@ -120,10 +120,10 @@ defmodule ExDatalog.IntegrationTest do
             [Constraint.gt(Term.var("V"), Term.const(5))]
           )
         )
-        |> ExDatalog.query()
+        |> ExDatalog.materialize()
 
       assert {:ok, result} = result
-      big = ExDatalog.Result.get(result, "big_value")
+      big = ExDatalog.Knowledge.get(result, "big_value")
       assert MapSet.size(big) == 1
       assert {:y, 10} in big
     end
@@ -141,10 +141,10 @@ defmodule ExDatalog.IntegrationTest do
             [Constraint.add(Term.var("A"), Term.var("B"), Term.var("C"))]
           )
         )
-        |> ExDatalog.query()
+        |> ExDatalog.materialize()
 
       assert {:ok, result} = result
-      sums = ExDatalog.Result.get(result, "sum")
+      sums = ExDatalog.Knowledge.get(result, "sum")
       assert MapSet.size(sums) == 1
       assert {3, 7, 10} in sums
     end
@@ -164,16 +164,16 @@ defmodule ExDatalog.IntegrationTest do
             ]
           )
         )
-        |> ExDatalog.query()
+        |> ExDatalog.materialize()
 
       assert {:ok, result} = result
-      cycle = ExDatalog.Result.get(result, "cycle")
+      cycle = ExDatalog.Knowledge.get(result, "cycle")
       assert MapSet.size(cycle) == 1
       assert {:a} in cycle
     end
   end
 
-  describe "end-to-end: Result API" do
+  describe "end-to-end: Knowledge API" do
     test "query with goal option" do
       result =
         Program.new()
@@ -187,13 +187,13 @@ defmodule ExDatalog.IntegrationTest do
             [{:positive, Atom.new("edge", [Term.var("X"), Term.var("Y")])}]
           )
         )
-        |> ExDatalog.query()
+        |> ExDatalog.materialize()
 
       assert {:ok, result} = result
-      path = ExDatalog.Result.get(result, "path")
+      path = ExDatalog.Knowledge.get(result, "path")
       assert MapSet.size(path) == 2
 
-      matched = ExDatalog.Result.match(result, "path", [:a, :_])
+      matched = ExDatalog.Knowledge.match(result, "path", [:a, :_])
       assert MapSet.size(matched) == 1
       assert {:a, :b} in matched
     end
@@ -241,10 +241,10 @@ defmodule ExDatalog.IntegrationTest do
             ]
           )
         )
-        |> ExDatalog.query()
+        |> ExDatalog.materialize()
 
       assert {:ok, result} = result
-      path = ExDatalog.Result.get(result, "path")
+      path = ExDatalog.Knowledge.get(result, "path")
       assert {:a, :b} in path
       assert {:b, :c} in path
       assert {:a, :c} in path
@@ -273,10 +273,10 @@ defmodule ExDatalog.IntegrationTest do
             ]
           )
         )
-        |> ExDatalog.query()
+        |> ExDatalog.materialize()
 
       assert {:ok, result} = result
-      bachelors = ExDatalog.Result.get(result, "bachelor")
+      bachelors = ExDatalog.Knowledge.get(result, "bachelor")
       assert MapSet.size(bachelors) == 1
       assert {:bob} in bachelors
     end
@@ -299,10 +299,10 @@ defmodule ExDatalog.IntegrationTest do
             ]
           )
         )
-        |> ExDatalog.query()
+        |> ExDatalog.materialize()
 
       assert {:ok, result} = result
-      bachelors = ExDatalog.Result.get(result, "bachelor")
+      bachelors = ExDatalog.Knowledge.get(result, "bachelor")
       assert MapSet.size(bachelors) == 2
       assert {:alice} in bachelors
       assert {:bob} in bachelors
@@ -327,10 +327,10 @@ defmodule ExDatalog.IntegrationTest do
             ]
           )
         )
-        |> ExDatalog.query()
+        |> ExDatalog.materialize()
 
       assert {:ok, result} = result
-      filtered = ExDatalog.Result.get(result, "not_married_to_alice")
+      filtered = ExDatalog.Knowledge.get(result, "not_married_to_alice")
       assert MapSet.size(filtered) == 1
       assert {:carol} in filtered
     end
@@ -358,10 +358,10 @@ defmodule ExDatalog.IntegrationTest do
             ]
           )
         )
-        |> ExDatalog.query()
+        |> ExDatalog.materialize()
 
       assert {:ok, result} = result
-      verified = ExDatalog.Result.get(result, "verified")
+      verified = ExDatalog.Knowledge.get(result, "verified")
       assert MapSet.size(verified) == 1
       assert {:alice} in verified
     end
@@ -409,16 +409,16 @@ defmodule ExDatalog.IntegrationTest do
             ]
           )
         )
-        |> ExDatalog.query()
+        |> ExDatalog.materialize()
 
       assert {:ok, result} = result
 
-      reachable = ExDatalog.Result.get(result, "reachable")
+      reachable = ExDatalog.Knowledge.get(result, "reachable")
       assert {:a, :b} in reachable
       assert {:b, :c} in reachable
       assert {:a, :c} in reachable
 
-      unreachable = ExDatalog.Result.get(result, "unreachable")
+      unreachable = ExDatalog.Knowledge.get(result, "unreachable")
 
       assert {:b, :a} in unreachable
       assert {:c, :a} in unreachable
@@ -478,7 +478,7 @@ defmodule ExDatalog.IntegrationTest do
             [{:positive, Atom.new("edge", [Term.var("X"), Term.var("Y")])}]
           )
         )
-        |> ExDatalog.query()
+        |> ExDatalog.materialize()
 
       assert {:ok, result} = result
       assert result.provenance == nil
@@ -496,7 +496,7 @@ defmodule ExDatalog.IntegrationTest do
             [{:positive, Atom.new("edge", [Term.var("X"), Term.var("Y")])}]
           )
         )
-        |> ExDatalog.query(explain: true)
+        |> ExDatalog.materialize(explain: true)
 
       assert result.provenance != nil
       assert result.provenance.fact_origins["edge"][{:a, :b}] == :base
@@ -527,7 +527,7 @@ defmodule ExDatalog.IntegrationTest do
             ]
           )
         )
-        |> ExDatalog.query(explain: true)
+        |> ExDatalog.materialize(explain: true)
 
       assert {:ok, tree} = Explain.explain(result, "bachelor", {:bob})
       assert %Explain.Node{} = tree
