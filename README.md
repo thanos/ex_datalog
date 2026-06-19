@@ -50,7 +50,7 @@ Add `ex_datalog` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:ex_datalog, "~> 0.2.0"}
+    {:ex_datalog, "~> 0.3.0"}
   ]
 end
 ```
@@ -280,6 +280,8 @@ reference.
 - [What is Datalog?](docs/what-is-datalog.md) — introduction, history, Prolog comparison, industry use cases, LLM integration
 - [Constraints](docs/constraints.md) — constraint types, evaluation, and the dispatch model
 - [Storage Backends](docs/storage_backends.md) — Map vs ETS, options, capabilities, determinism guarantee
+- [Quickstart Tutorial](livebook/quickstart.livemd) — interactive Livebook walkthrough
+- [Examples](livebook/examples.livemd) — 10 realistic use cases (RBAC, supply chain, fraud detection, and more)
 - [API reference](https://hexdocs.pm/ex_datalog) — full module and function documentation
 
 Generate docs locally:
@@ -346,8 +348,7 @@ The following references are highly recommended for understanding both the theor
 
 | Version | Description |
 |---|---|
-| v0.2.0 | ETS backend, constraint behaviour, type/string/membership predicates, capabilities, provenance, telemetry |
-| v0.3.0 | Tuple shorthand for rules (`add_rule/3`, `add_rule/4`), `Term.from/1`, `ExDatalog.Atom.from_tuple/1`, `Constraint.from_tuple/1` |
+| v0.3.0 | Tuple shorthand for rules (`add_rule/3`, `add_rule/4`), `Term.from/1`, `ExDatalog.Atom.from_tuple/1`, `Constraint.from_tuple/1`; renamed `Result` → `Knowledge`, `query` → `materialize` |
 | v0.4.0 | Sigil DSL (`~d`), aggregation (`count`, `sum`, `min`, `max`), general predicates as deterministic BEAM callbacks |
 | v0.5.0 | Magic sets / demand-driven evaluation, external solver adapter (experimental Z3/Soufflé) |
 | v1.0.0 | Stable public API, hardened production semantics |

@@ -1,7 +1,7 @@
 defmodule ExDatalog.MixProject do
   use Mix.Project
 
-  @version "0.2.0"
+  @version "0.3.0"
   @source_url "https://github.com/thanos/ex_datalog"
 
   def project do
@@ -113,7 +113,9 @@ defmodule ExDatalog.MixProject do
         "CHANGELOG.md",
         {"docs/what-is-datalog.md", filename: "what-is-datalog", title: "What is Datalog?"},
         {"docs/constraints.md", filename: "constraints", title: "Constraints"},
-        {"docs/storage_backends.md", filename: "storage-backends", title: "Storage Backends"}
+        {"docs/storage_backends.md", filename: "storage-backends", title: "Storage Backends"},
+        {"livebook/quickstart.livemd", filename: "quickstart", title: "Quickstart Tutorial"},
+        {"livebook/examples.livemd", filename: "examples", title: "Examples"}
       ],
       groups_for_modules: [
         "Program Builder": [

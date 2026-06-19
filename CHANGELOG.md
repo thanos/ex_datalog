@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] - 2025-06-19
 
 ### Added
 
@@ -17,6 +17,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ExDatalog.Atom.from_tuple/1` — constructs an atom from `{"relation", [terms]}` shorthand.
 - `Constraint.from_tuple/1` — constructs a constraint from operator tuples
   like `{:neq, :A, :B}`, `{:add, :X, :Y, :Z}`, `{:is_integer, :V}`.
+
+### Changed
+
+- **`ExDatalog.Result` renamed to `ExDatalog.Knowledge`** — the struct returned by
+  `materialize/2` now reflects that it represents a materialized knowledge base,
+  not a query result. All references updated across source, tests, docs, and livebooks.
+- `ExDatalog.query` (2-arity) renamed to `ExDatalog.materialize/2` — the top-level API function
+  now reflects that it runs the full fixpoint pipeline, not a single query.
+- **Telemetry events renamed**: `[:ex_datalog, :query, :start|:stop|:exception]` →
+  `[:ex_datalog, :materialize, :start|:stop|:exception]`.
+- `ExDatalog.validate/1` and `ExDatalog.compile/1` now pass through `{:error, _}` tuples
+  from the builder pipeline instead of raising `FunctionClauseError`. `materialize/2`
+  also passes through `{:error, _}` from a failed pipeline step.
+- Livebook examples (`quickstart.livemd`, `examples.livemd`, `examples.exs`) converted
+  to tuple shorthand notation. README quickstart updated accordingly.
 
 ## [0.2.0] - 2025-05-15
 
