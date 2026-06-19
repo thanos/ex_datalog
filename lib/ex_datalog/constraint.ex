@@ -570,6 +570,88 @@ defmodule ExDatalog.Constraint do
 
   defp valid_right?(_, _), do: false
 
+  @doc """
+  Constructs a constraint from a shorthand tuple.
+
+  Each term in the tuple is converted using `Term.from/1`, which follows the
+  Prolog convention: uppercase atoms become variables (`:A` → `{:var, "A"}`),
+  lowercase atoms and other values become constants, and `:_` becomes a wildcard.
+
+  Accepts either a shorthand tuple or an existing `%Constraint{}` struct
+  (passed through unchanged).
+
+  ### Comparison constraints (2 terms)
+
+      {:gt, left, right}
+      {:lt, left, right}
+      {:gte, left, right}
+      {:lte, left, right}
+      {:eq, left, right}
+      {:neq, left, right}
+
+  ### Arithmetic constraints (3 terms)
+
+      {:add, left, right, result}
+      {:sub, left, right, result}
+      {:mul, left, right, result}
+      {:div, left, right, result}
+
+  ### Type predicates (1 term)
+
+      {:is_integer, term}
+      {:is_binary, term}
+      {:is_atom, term}
+
+  ### String predicates (2 terms)
+
+      {:starts_with, left, right}
+      {:contains, left, right}
+
+  ### Membership (2 terms)
+
+      {:member, left, right}
+
+  ## Examples
+
+      iex> ExDatalog.Constraint.from_tuple({:neq, :A, :B})
+      %ExDatalog.Constraint{op: :neq, left: {:var, "A"}, right: {:var, "B"}, result: nil}
+
+      iex> ExDatalog.Constraint.from_tuple({:add, :X, :Y, :Z})
+      %ExDatalog.Constraint{op: :add, left: {:var, "X"}, right: {:var, "Y"}, result: {:var, "Z"}}
+
+      iex> ExDatalog.Constraint.from_tuple({:gt, :S, 100_000})
+      %ExDatalog.Constraint{op: :gt, left: {:var, "S"}, right: {:const, 100000}, result: nil}
+
+      iex> ExDatalog.Constraint.from_tuple({:is_integer, :V})
+      %ExDatalog.Constraint{op: :is_integer, left: {:var, "V"}, right: nil, result: nil}
+
+      iex> ExDatalog.Constraint.from_tuple({:member, :Dept, [:engineering, :infra]})
+      %ExDatalog.Constraint{op: :member, left: {:var, "Dept"}, right: {:const, [:engineering, :infra]}, result: nil}
+
+  """
+  @spec from_tuple(tuple() | t()) :: t()
+  def from_tuple(%__MODULE__{} = c), do: c
+
+  def from_tuple({op, left, right, result}) when op in @arithmetic_ops do
+    arithmetic(op, Term.from(left), Term.from(right), Term.from(result))
+  end
+
+  def from_tuple({op, left, right}) when op in @comparison_ops do
+    comparison(op, Term.from(left), Term.from(right))
+  end
+
+  def from_tuple({op, left, right}) when op in @string_ops do
+    filter(op, Term.from(left), Term.from(right))
+  end
+
+  def from_tuple({:member, left, right}) do
+    member(Term.from(left), Term.from(right))
+  end
+
+  def from_tuple({op, term}) when op in @type_ops do
+    unary(op, Term.from(term))
+  end
+
   # --- Extensible constraint behaviour ---
 
   @doc """

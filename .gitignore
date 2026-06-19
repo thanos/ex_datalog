@@ -24,3 +24,8 @@ ex_datalog-*.tar
 
 # Dialyzer PLT files.
 /priv/plts/
+
+/livebook/*.exs
+/livebook/*.md
+/chest/
+.tool-versions

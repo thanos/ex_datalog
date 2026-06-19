@@ -25,16 +25,16 @@ defmodule ExDatalog.Program do
   passes through unchanged. This means you can pipe freely and check for
   errors at the end:
 
-      {:ok, result} =
+      {:ok, knowledge} =
         Program.new()
         |> Program.add_relation("edge", [:atom, :atom])
         |> Program.add_relation("path", [:atom, :atom])
         |> Program.add_fact("edge", [:a, :b])
-        |> Program.add_rule(...)
-        |> ExDatalog.query()
+        |> Program.add_rule({"path", [:X, :Y]}, [{:positive, {"edge", [:X, :Y]}}])
+        |> ExDatalog.materialize()
 
   If `add_relation/3` fails, the `{:error, msg}` tuple flows through
-  `add_fact/3` and `add_rule/2` without raising, and `ExDatalog.query/1`
+  `add_fact/3` and `add_rule/3` without raising, and `ExDatalog.materialize/1`
   will detect the error struct and return `{:error, [msg]}`.
 
   Semantic validation (variable safety, stratification, constraint binding)
@@ -48,6 +48,41 @@ defmodule ExDatalog.Program do
   (e.g., programs assembled by directly modifying the struct, which bypasses
   builder validation).
 
+  ## Shorthand rule notation
+
+  `add_rule/3` and `add_rule/4` accept a more ergonomic tuple-based notation
+  that avoids the need for explicit `Rule.new/3`, `ExDatalog.Atom.new/2`, and
+  `Term.var/1` calls:
+
+  - **Head** — `{"relation", [terms...]}` where each term follows the
+    Prolog convention: uppercase atoms become variables (`:X` → `{:var, "X"}`),
+    `:_` becomes a wildcard, lowercase atoms and other values become constants.
+
+  - **Body** — `{:positive, {"rel", [terms...]}}` or
+    `{:negative, {"rel", [terms...]}}` for each literal.
+
+  - **Constraints** — operator tuples like `{:neq, :A, :B}` for comparisons,
+    `{:add, :X, :Y, :Z}` for arithmetic, `{:is_integer, :V}` for type
+    predicates, `{:starts_with, :E, "prefix"}` for string predicates, and
+    `{:member, :X, [:a, :b]}` for membership.
+
+      Program.add_rule(program,
+        {"ancestor", [:X, :Z]},
+        [
+          {:positive, {"parent", [:X, :Y]}},
+          {:positive, {"ancestor", [:Y, :Z]}}
+        ]
+      )
+
+      Program.add_rule(program,
+        {"high_earner", [:X]},
+        [{:positive, {"income", [:X, :S]}}],
+        [{:gt, :S, 100_000}]
+      )
+
+  The struct-based `add_rule/2` remains available for cases where you need
+  full control over term types.
+
   ## Example
 
       iex> alias ExDatalog.{Program, Atom, Rule, Term}
@@ -58,10 +93,8 @@ defmodule ExDatalog.Program do
       ...>   |> Program.add_fact("parent", [:alice, :bob])
       ...>   |> Program.add_fact("parent", [:bob, :carol])
       ...>   |> Program.add_rule(
-      ...>        Rule.new(
-      ...>          Atom.new("ancestor", [Term.var("X"), Term.var("Y")]),
-      ...>          [{:positive, Atom.new("parent", [Term.var("X"), Term.var("Y")])}]
-      ...>        )
+      ...>        {"ancestor", [:X, :Y]},
+      ...>        [{:positive, {"parent", [:X, :Y]}}]
       ...>      )
       iex> length(program.facts) == 2
       true
@@ -70,12 +103,19 @@ defmodule ExDatalog.Program do
 
   """
 
-  alias ExDatalog.{Atom, Rule, Term}
+  alias ExDatalog.{Atom, Constraint, Rule, Term}
 
   @type relation_name :: String.t()
   @type ir_type :: :integer | :string | :atom | :any
   @type relation_schema :: %{arity: non_neg_integer(), types: [ir_type()]}
   @type fact_values :: [Term.value()]
+
+  @type head_shorthand :: {String.t(), [Term.shorthand()]} | Atom.t()
+  @type body_literal_shorthand ::
+          {:positive | :negative, {String.t(), [Term.shorthand()]}}
+          | {:positive | :negative, Atom.t()}
+          | Rule.literal()
+  @type constraint_shorthand :: tuple() | Constraint.t()
 
   @type t :: %__MODULE__{
           relations: %{relation_name() => relation_schema()},
@@ -237,6 +277,76 @@ defmodule ExDatalog.Program do
   def add_rule({:error, _} = err, %Rule{}), do: err
 
   @doc """
+  Adds a rule using shorthand notation for the head atom, body literals,
+  and constraints.
+
+  This is a more ergonomic alternative to `add_rule/2` that avoids the need
+  for explicit `Rule.new/3`, `ExDatalog.Atom.new/2`, and `ExDatalog.Term.var/1` calls.
+
+  The **head** is a tuple `{"relation", [terms...]}` where each term follows
+  the Prolog-inspired convention:
+
+  - Uppercase atoms become logic variables (`:X` → `{:var, "X"}`)
+  - `:_` becomes a wildcard
+  - Lowercase atoms and other values become constants
+
+  Each **body literal** is `{:positive, {"rel", [terms...]}}` or
+  `{:negative, {"rel", [terms...]}}`. You may also mix in structs like
+  `{:positive, ExDatalog.Atom.new(...)}`.
+
+  Each **constraint** is an operator tuple like `{:neq, :A, :B}` or
+  `{:add, :X, :Y, :Z}`. You may also use existing `%Constraint{}` structs.
+
+  Returns `{:error, reason}` if any structural check fails (same validation
+  as `add_rule/2`).
+
+  ## Examples
+
+      iex> alias ExDatalog.Program
+      iex> program =
+      ...>   Program.new()
+      ...>   |> Program.add_relation("parent", [:atom, :atom])
+      ...>   |> Program.add_relation("ancestor", [:atom, :atom])
+      iex> result = Program.add_rule(program,
+      ...>   {"ancestor", [:X, :Y]},
+      ...>   [{:positive, {"parent", [:X, :Y]}}]
+      ...> )
+      iex> length(result.rules) == 1
+      true
+
+      iex> alias ExDatalog.Program
+      iex> program =
+      ...>   Program.new()
+      ...>   |> Program.add_relation("income", [:atom, :integer])
+      ...>   |> Program.add_relation("high_earner", [:atom])
+      iex> result = Program.add_rule(program,
+      ...>   {"high_earner", [:X]},
+      ...>   [{:positive, {"income", [:X, :S]}}],
+      ...>   [{:gt, :S, 100_000}]
+      ...> )
+      iex> length(result.rules) == 1
+      true
+
+  """
+  @spec add_rule(t(), head_shorthand(), [body_literal_shorthand()], [constraint_shorthand()]) ::
+          t() | {:error, String.t()}
+  def add_rule(program, head, body, constraints \\ [])
+
+  def add_rule(%__MODULE__{} = program, head, body, constraints)
+      when is_list(body) and is_list(constraints) do
+    rule =
+      Rule.new(
+        Atom.from_tuple(head),
+        Enum.map(body, &body_literal_from_tuple/1),
+        Enum.map(constraints, &Constraint.from_tuple/1)
+      )
+
+    add_rule(program, rule)
+  end
+
+  def add_rule({:error, _} = err, _head, _body, _constraints), do: err
+
+  @doc """
   Returns the schema for a relation, or `nil` if not defined.
 
   ## Examples
@@ -273,6 +383,16 @@ defmodule ExDatalog.Program do
   def has_relation?(%__MODULE__{relations: rels}, name), do: Map.has_key?(rels, name)
 
   # --- Private helpers ---
+
+  defp body_literal_from_tuple({polarity, {_, _} = atom_tuple})
+       when polarity in [:positive, :negative] do
+    {polarity, Atom.from_tuple(atom_tuple)}
+  end
+
+  defp body_literal_from_tuple({polarity, %Atom{} = atom})
+       when polarity in [:positive, :negative] do
+    {polarity, atom}
+  end
 
   defp validate_atom(program, atom) do
     with :ok <- validate_atom_relation(atom, program),

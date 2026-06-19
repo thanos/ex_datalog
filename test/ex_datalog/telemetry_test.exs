@@ -4,16 +4,16 @@ defmodule ExDatalog.TelemetryTest do
   alias ExDatalog.{Atom, Program, Rule, Telemetry, Term}
 
   describe "event name functions" do
-    test "query_start/0 returns the correct event name" do
-      assert Telemetry.query_start() == [:ex_datalog, :query, :start]
+    test "materialize_start/0 returns the correct event name" do
+      assert Telemetry.materialize_start() == [:ex_datalog, :materialize, :start]
     end
 
-    test "query_stop/0 returns the correct event name" do
-      assert Telemetry.query_stop() == [:ex_datalog, :query, :stop]
+    test "materialize_stop/0 returns the correct event name" do
+      assert Telemetry.materialize_stop() == [:ex_datalog, :materialize, :stop]
     end
 
-    test "query_exception/0 returns the correct event name" do
-      assert Telemetry.query_exception() == [:ex_datalog, :query, :exception]
+    test "materialize_exception/0 returns the correct event name" do
+      assert Telemetry.materialize_exception() == [:ex_datalog, :materialize, :exception]
     end
   end
 
@@ -32,7 +32,7 @@ defmodule ExDatalog.TelemetryTest do
         |> ExDatalog.compile()
 
       {measurements, metadata} =
-        capture_event(Telemetry.query_start(), fn ->
+        capture_event(Telemetry.materialize_start(), fn ->
           Telemetry.emit_start(ir)
         end)
 
@@ -48,7 +48,7 @@ defmodule ExDatalog.TelemetryTest do
       relation_sizes = %{"edge" => 2}
 
       {measurements, metadata} =
-        capture_event(Telemetry.query_stop(), fn ->
+        capture_event(Telemetry.materialize_stop(), fn ->
           Telemetry.emit_stop(start_time, 3, relation_sizes, 1, :map)
         end)
 
@@ -66,7 +66,7 @@ defmodule ExDatalog.TelemetryTest do
       stacktrace = [{:module, :function, 1, []}]
 
       {measurements, metadata} =
-        capture_event(Telemetry.query_exception(), fn ->
+        capture_event(Telemetry.materialize_exception(), fn ->
           Telemetry.emit_exception(
             start_time,
             :error,
@@ -85,8 +85,8 @@ defmodule ExDatalog.TelemetryTest do
     end
   end
 
-  describe "integration: query emits telemetry events" do
-    test "successful query emits start and stop events" do
+  describe "integration: materialize emits telemetry events" do
+    test "successful materialize emits start and stop events" do
       program =
         Program.new()
         |> Program.add_relation("parent", [:atom, :atom])
@@ -100,10 +100,10 @@ defmodule ExDatalog.TelemetryTest do
         )
 
       start_event =
-        capture_event(Telemetry.query_start(), fn ->
+        capture_event(Telemetry.materialize_start(), fn ->
           stop_event =
-            capture_event(Telemetry.query_stop(), fn ->
-              {:ok, _result} = ExDatalog.query(program)
+            capture_event(Telemetry.materialize_stop(), fn ->
+              {:ok, _knowledge} = ExDatalog.materialize(program)
             end)
 
           assert stop_event != nil
@@ -137,9 +137,9 @@ defmodule ExDatalog.TelemetryTest do
       }
 
       start_event =
-        capture_event(Telemetry.query_start(), fn ->
+        capture_event(Telemetry.materialize_start(), fn ->
           stop_event =
-            capture_event(Telemetry.query_stop(), fn ->
+            capture_event(Telemetry.materialize_stop(), fn ->
               {:error, _} = ExDatalog.evaluate(ir)
             end)
 
@@ -164,8 +164,8 @@ defmodule ExDatalog.TelemetryTest do
         )
 
       start_event =
-        capture_event(Telemetry.query_start(), fn ->
-          {:error, _} = ExDatalog.query(program)
+        capture_event(Telemetry.materialize_start(), fn ->
+          {:error, _} = ExDatalog.materialize(program)
         end)
 
       assert start_event == nil
@@ -173,15 +173,15 @@ defmodule ExDatalog.TelemetryTest do
   end
 
   describe "no overhead without handlers" do
-    test "query runs correctly when no telemetry handlers are attached" do
+    test "materialize runs correctly when no telemetry handlers are attached" do
       program =
         Program.new()
         |> Program.add_relation("edge", [:atom, :atom])
         |> Program.add_fact("edge", [:a, :b])
         |> Program.add_fact("edge", [:b, :c])
 
-      {:ok, result} = ExDatalog.query(program)
-      assert MapSet.size(ExDatalog.Result.get(result, "edge")) == 2
+      {:ok, knowledge} = ExDatalog.materialize(program)
+      assert MapSet.size(ExDatalog.Knowledge.get(knowledge, "edge")) == 2
     end
   end
 

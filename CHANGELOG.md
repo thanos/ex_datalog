@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2025-06-19
+
+### Added
+
+- **Tuple shorthand for rules**: `Program.add_rule/3` and `Program.add_rule/4` accept
+  `{relation, [terms]}` tuples for heads, `{:polarity, {relation, [terms]}}` for body
+  literals, and `{:op, args...}` for constraints. Uppercase atoms (`:X`) become variables,
+  `:_` becomes a wildcard, lowercase atoms and other values become constants.
+- `Term.from/1` — converts shorthand values to `Term.t()` following Prolog convention.
+- `ExDatalog.Atom.from_tuple/1` — constructs an atom from `{"relation", [terms]}` shorthand.
+- `Constraint.from_tuple/1` — constructs a constraint from operator tuples
+  like `{:neq, :A, :B}`, `{:add, :X, :Y, :Z}`, `{:is_integer, :V}`.
+
+### Changed
+
+- **`ExDatalog.Result` renamed to `ExDatalog.Knowledge`** — the struct returned by
+  `materialize/2` now reflects that it represents a materialized knowledge base,
+  not a query result. All references updated across source, tests, docs, and livebooks.
+- `ExDatalog.query` (2-arity) renamed to `ExDatalog.materialize/2` — the top-level API function
+  now reflects that it runs the full fixpoint pipeline, not a single query.
+- **Telemetry events renamed**: `[:ex_datalog, :query, :start|:stop|:exception]` →
+  `[:ex_datalog, :materialize, :start|:stop|:exception]`.
+- `ExDatalog.validate/1` and `ExDatalog.compile/1` now pass through `{:error, _}` tuples
+  from the builder pipeline instead of raising `FunctionClauseError`. `materialize/2`
+  also passes through `{:error, _}` from a failed pipeline step.
+- Livebook examples (`quickstart.livemd`, `examples.livemd`, `examples.exs`) converted
+  to tuple shorthand notation. README quickstart updated accordingly.
+
 ## [0.2.0] - 2025-05-15
 
 ### Added
@@ -97,8 +125,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `ExDatalog.Engine.Join` — sequential-scan join (`join/3`), tuple matching (`match_tuple/3`), projection (`project/2`), indexed join (`join_indexed/4`, not yet wired into evaluator)
   - `ExDatalog.Engine.ConstraintEval` — constraint evaluation (comparison filters, arithmetic extensions)
   - `ExDatalog.Storage.Map` — default Map/MapSet-based storage backend
-  - `ExDatalog.Result` — result struct with relations, stats, and provenance fields
-  - Full pipeline: `ExDatalog.query/1` and `ExDatalog.query/2` public API
+  - `ExDatalog.Knowledge` — knowledge base struct with relations, stats, and provenance fields
+  - Full pipeline: `ExDatalog.materialize/2` public API
 - Phase 5: Negation and stratification
   - Negative body atoms (`{:negative, %IR.Atom{}}`) evaluated as filters against fully-materialised lower-stratum relations
   - Stratification validation rejects unstratifiable programs before evaluation

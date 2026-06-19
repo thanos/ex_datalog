@@ -27,6 +27,7 @@ defmodule ExDatalog.Term do
   @type var_name :: String.t()
   @type value :: integer() | String.t() | atom() | list()
   @type t :: {:var, var_name()} | {:const, value()} | :wildcard
+  @type shorthand :: atom() | integer() | String.t() | list() | t()
 
   @doc """
   Constructs a logic variable term.
@@ -187,4 +188,74 @@ defmodule ExDatalog.Term do
   def variables(terms) when is_list(terms) do
     for {:var, name} <- terms, do: name
   end
+
+  @doc """
+  Converts a shorthand value to a term.
+
+  Follows Prolog convention for distinguishing variables from constants:
+
+  - **Uppercase atoms** become logic variables: `:A` → `{:var, "A"}`,
+    `:Pkg` → `{:var, "Pkg"}`
+  - **`:_`** becomes a wildcard: `:_` → `:wildcard`
+  - **Lowercase atoms** become constants: `:alice` → `{:const, :alice}`
+  - **Integers** become constants: `42` → `{:const, 42}`
+  - **Strings** become constants: `"hello"` → `{:const, "hello"}`
+  - **Lists** become constants: `[:a, :b]` → `{:const, [:a, :b]}`
+  - **Existing terms** pass through unchanged
+
+  This is the inverse of writing out `Term.var/1`, `Term.const/1`, and
+  `Term.wildcard/0` explicitly, and is designed for use with the
+  tuple-shorthand forms of `Program.add_rule/3` and `Program.add_rule/4`.
+
+  ## Examples
+
+      iex> ExDatalog.Term.from(:A)
+      {:var, "A"}
+
+      iex> ExDatalog.Term.from(:Pkg)
+      {:var, "Pkg"}
+
+      iex> ExDatalog.Term.from(:_)
+      :wildcard
+
+      iex> ExDatalog.Term.from(:alice)
+      {:const, :alice}
+
+      iex> ExDatalog.Term.from(42)
+      {:const, 42}
+
+      iex> ExDatalog.Term.from("hello")
+      {:const, "hello"}
+
+      iex> ExDatalog.Term.from([:a, :b])
+      {:const, [:a, :b]}
+
+      iex> ExDatalog.Term.from({:var, "X"})
+      {:var, "X"}
+
+      iex> ExDatalog.Term.from({:const, :ok})
+      {:const, :ok}
+
+      iex> ExDatalog.Term.from(:wildcard)
+      :wildcard
+
+  """
+  @spec from(shorthand()) :: t()
+  def from({:var, _} = var), do: var
+  def from({:const, _} = const), do: const
+  def from(:wildcard), do: :wildcard
+
+  def from(atom) when is_atom(atom) do
+    name = Kernel.to_string(atom)
+
+    cond do
+      atom == :_ -> :wildcard
+      String.match?(name, ~r/^[A-Z]/) -> {:var, name}
+      true -> {:const, atom}
+    end
+  end
+
+  def from(value) when is_integer(value), do: {:const, value}
+  def from(value) when is_binary(value), do: {:const, value}
+  def from(value) when is_list(value), do: {:const, value}
 end

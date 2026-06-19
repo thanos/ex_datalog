@@ -2,7 +2,7 @@ defmodule ExDatalog.ProgramTest do
   use ExUnit.Case, async: true
   doctest ExDatalog.Program
 
-  alias ExDatalog.{Atom, Program, Rule, Term}
+  alias ExDatalog.{Atom, Constraint, Program, Rule, Term}
 
   defp base_program do
     Program.new()
@@ -344,6 +344,222 @@ defmodule ExDatalog.ProgramTest do
 
       assert {:error, msg} = result
       assert msg =~ "not defined"
+    end
+  end
+
+  describe "add_rule/3 shorthand" do
+    test "adds a basic rule with tuple shorthand" do
+      program =
+        Program.new()
+        |> Program.add_relation("parent", [:atom, :atom])
+        |> Program.add_relation("ancestor", [:atom, :atom])
+        |> Program.add_rule(
+          {"ancestor", [:X, :Y]},
+          [{:positive, {"parent", [:X, :Y]}}]
+        )
+
+      assert length(program.rules) == 1
+      rule = hd(program.rules)
+      assert rule.head.relation == "ancestor"
+      assert rule.head.terms == [{:var, "X"}, {:var, "Y"}]
+
+      assert rule.body == [
+               {:positive, %Atom{relation: "parent", terms: [{:var, "X"}, {:var, "Y"}]}}
+             ]
+
+      assert rule.constraints == []
+    end
+
+    test "adds a rule with negation using tuple shorthand" do
+      program =
+        Program.new()
+        |> Program.add_relation("person", [:atom])
+        |> Program.add_relation("married", [:atom, :atom])
+        |> Program.add_relation("bachelor", [:atom])
+        |> Program.add_rule(
+          {"bachelor", [:X]},
+          [
+            {:positive, {"person", [:X]}},
+            {:negative, {"married", [:X, :_]}}
+          ]
+        )
+
+      assert length(program.rules) == 1
+      rule = hd(program.rules)
+      assert rule.head.relation == "bachelor"
+      assert length(rule.body) == 2
+      assert elem(Enum.at(rule.body, 1), 0) == :negative
+    end
+
+    test "returns error when head relation undefined" do
+      result =
+        Program.new()
+        |> Program.add_relation("parent", [:atom, :atom])
+        |> Program.add_rule(
+          {"undefined", [:X]},
+          [{:positive, {"parent", [:X]}}]
+        )
+
+      assert {:error, msg} = result
+      assert msg =~ "undefined relation"
+    end
+
+    test "error propagates through shorthand add_rule" do
+      result =
+        Program.new()
+        |> Program.add_relation("", [:atom])
+        |> Program.add_rule(
+          {"ancestor", [:X, :Y]},
+          [{:positive, {"parent", [:X, :Y]}}]
+        )
+
+      assert {:error, msg} = result
+      assert msg =~ "non-empty string"
+    end
+
+    test "lowercase atoms become constants in head" do
+      program =
+        Program.new()
+        |> Program.add_relation("likes", [:atom, :atom])
+        |> Program.add_rule(
+          {"likes", [:alice, :X]},
+          [{:positive, {"likes", [:alice, :X]}}]
+        )
+
+      rule = hd(program.rules)
+      assert rule.head.terms == [{:const, :alice}, {:var, "X"}]
+    end
+
+    test "integers become constants in shorthand" do
+      program =
+        Program.new()
+        |> Program.add_relation("value", [:atom, :integer])
+        |> Program.add_relation("big_value", [:atom, :integer])
+        |> Program.add_rule(
+          {"big_value", [:X, 42]},
+          [{:positive, {"value", [:X, 42]}}]
+        )
+
+      rule = hd(program.rules)
+      assert rule.head.terms == [{:var, "X"}, {:const, 42}]
+    end
+  end
+
+  describe "add_rule/4 shorthand with constraints" do
+    test "adds a rule with comparison constraint" do
+      program =
+        Program.new()
+        |> Program.add_relation("income", [:atom, :integer])
+        |> Program.add_relation("high_earner", [:atom])
+        |> Program.add_rule(
+          {"high_earner", [:X]},
+          [{:positive, {"income", [:X, :S]}}],
+          [{:gt, :S, 100_000}]
+        )
+
+      assert length(program.rules) == 1
+      rule = hd(program.rules)
+      assert length(rule.constraints) == 1
+      assert rule.constraints == [Constraint.gt(Term.var("S"), Term.const(100_000))]
+    end
+
+    test "adds a rule with arithmetic constraint" do
+      program =
+        Program.new()
+        |> Program.add_relation("pair", [:integer, :integer])
+        |> Program.add_relation("sum", [:integer, :integer, :integer])
+        |> Program.add_rule(
+          {"sum", [:A, :B, :C]},
+          [{:positive, {"pair", [:A, :B]}}],
+          [{:add, :A, :B, :C}]
+        )
+
+      rule = hd(program.rules)
+      assert rule.constraints == [Constraint.add(Term.var("A"), Term.var("B"), Term.var("C"))]
+    end
+
+    test "adds a rule with neq constraint" do
+      program =
+        Program.new()
+        |> Program.add_relation("friend", [:atom, :atom])
+        |> Program.add_relation("recommendation", [:atom, :atom])
+        |> Program.add_rule(
+          {"recommendation", [:A, :C]},
+          [
+            {:positive, {"friend", [:A, :B]}},
+            {:positive, {"friend", [:B, :C]}},
+            {:negative, {"friend", [:A, :C]}}
+          ],
+          [{:neq, :A, :C}]
+        )
+
+      rule = hd(program.rules)
+      assert rule.constraints == [Constraint.neq(Term.var("A"), Term.var("C"))]
+    end
+
+    test "adds a rule with type predicate constraint" do
+      program =
+        Program.new()
+        |> Program.add_relation("value", [:atom, :any])
+        |> Program.add_relation("int_value", [:atom, :integer])
+        |> Program.add_rule(
+          {"int_value", [:N, :V]},
+          [{:positive, {"value", [:N, :V]}}],
+          [{:is_integer, :V}]
+        )
+
+      rule = hd(program.rules)
+      assert rule.constraints == [Constraint.type_integer(Term.var("V"))]
+    end
+
+    test "adds a rule with membership constraint" do
+      program =
+        Program.new()
+        |> Program.add_relation("employee", [:atom, :atom])
+        |> Program.add_relation("eng_employee", [:atom])
+        |> Program.add_rule(
+          {"eng_employee", [:X]},
+          [{:positive, {"employee", [:X, :Dept]}}],
+          [{:member, :Dept, [:engineering, :infra]}]
+        )
+
+      rule = hd(program.rules)
+
+      assert rule.constraints == [
+               Constraint.member(Term.var("Dept"), Term.const([:engineering, :infra]))
+             ]
+    end
+
+    test "mixes shorthand and struct body literals" do
+      program =
+        Program.new()
+        |> Program.add_relation("parent", [:atom, :atom])
+        |> Program.add_relation("ancestor", [:atom, :atom])
+        |> Program.add_rule(
+          {"ancestor", [:X, :Y]},
+          [
+            {:positive, {"parent", [:X, :Y]}},
+            {:positive, Atom.new("parent", [Term.var("X"), Term.var("Y")])}
+          ]
+        )
+
+      assert length(program.rules) == 1
+      rule = hd(program.rules)
+      assert length(rule.body) == 2
+    end
+
+    test "error propagates through add_rule/4" do
+      result =
+        Program.new()
+        |> Program.add_relation("", [:atom])
+        |> Program.add_rule(
+          {"ancestor", [:X, :Y]},
+          [{:positive, {"parent", [:X, :Y]}}],
+          [{:neq, :X, :Y}]
+        )
+
+      assert {:error, msg} = result
+      assert msg =~ "non-empty string"
     end
   end
 end

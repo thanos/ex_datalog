@@ -1,9 +1,14 @@
-defmodule ExDatalog.Result do
+defmodule ExDatalog.Knowledge do
   @moduledoc """
-  Structured result from Datalog evaluation.
+  The complete knowledge base produced by Datalog evaluation.
 
-  Contains the derived fact sets for each relation, along with evaluation
+  Contains the derived fact sets for every relation, along with evaluation
   statistics (iteration count, duration, relation sizes).
+
+  The name reflects what this struct *is*: after applying all rules to all
+  facts until no new facts can be derived, you have a **knowledge base** —
+  every relation fully materialised, every derivable fact present. You then
+  *query* this knowledge with `get/2` and `match/3`.
 
   When provenance tracking is enabled (via `explain: true`), the `provenance`
   field records which rule derived each fact. Base facts (EDB) are attributed
@@ -15,7 +20,7 @@ defmodule ExDatalog.Result do
   - `get/2` — all tuples for a relation.
   - `match/3` — tuples matching a pattern (`:_` for wildcard).
   - `size/2` — number of tuples in a relation.
-  - `relations/1` — list of all relation names in the result.
+  - `relations/1` — list of all relation names in the knowledge base.
   """
 
   @type provenance :: %{
@@ -43,8 +48,8 @@ defmodule ExDatalog.Result do
 
   ## Examples
 
-      iex> result = %ExDatalog.Result{relations: %{"parent" => MapSet.new([{:alice, :bob}])}, stats: %{iterations: 1, duration_us: 0, relation_sizes: %{"parent" => 1}}}
-      iex> ExDatalog.Result.get(result, "parent") |> MapSet.to_list()
+      iex> knowledge = %ExDatalog.Knowledge{relations: %{"parent" => MapSet.new([{:alice, :bob}])}, stats: %{iterations: 1, duration_us: 0, relation_sizes: %{"parent" => 1}}}
+      iex> ExDatalog.Knowledge.get(knowledge, "parent") |> MapSet.to_list()
       [{:alice, :bob}]
 
   """
@@ -61,8 +66,8 @@ defmodule ExDatalog.Result do
 
   ## Examples
 
-      iex> result = %ExDatalog.Result{relations: %{"parent" => MapSet.new([{:alice, :bob}, {:carol, :dave}, {:alice, :carol}])}, stats: %{iterations: 1, duration_us: 0, relation_sizes: %{"parent" => 3}}}
-      iex> ExDatalog.Result.match(result, "parent", [:alice, :_]) |> MapSet.to_list() |> Enum.sort()
+      iex> knowledge = %ExDatalog.Knowledge{relations: %{"parent" => MapSet.new([{:alice, :bob}, {:carol, :dave}, {:alice, :carol}])}, stats: %{iterations: 1, duration_us: 0, relation_sizes: %{"parent" => 3}}}
+      iex> ExDatalog.Knowledge.match(knowledge, "parent", [:alice, :_]) |> MapSet.to_list() |> Enum.sort()
       [{:alice, :bob}, {:alice, :carol}]
 
   """
@@ -84,8 +89,8 @@ defmodule ExDatalog.Result do
 
   ## Examples
 
-      iex> result = %ExDatalog.Result{relations: %{"parent" => MapSet.new([{:alice, :bob}, {:carol, :dave}])}, stats: %{iterations: 1, duration_us: 0, relation_sizes: %{"parent" => 2}}}
-      iex> ExDatalog.Result.size(result, "parent")
+      iex> knowledge = %ExDatalog.Knowledge{relations: %{"parent" => MapSet.new([{:alice, :bob}, {:carol, :dave}])}, stats: %{iterations: 1, duration_us: 0, relation_sizes: %{"parent" => 2}}}
+      iex> ExDatalog.Knowledge.size(knowledge, "parent")
       2
 
   """
@@ -95,12 +100,12 @@ defmodule ExDatalog.Result do
   end
 
   @doc """
-  Returns all relation names present in the result.
+  Returns all relation names present in the knowledge base.
 
   ## Examples
 
-      iex> result = %ExDatalog.Result{relations: %{"parent" => MapSet.new(), "ancestor" => MapSet.new()}, stats: %{iterations: 1, duration_us: 0, relation_sizes: %{}}}
-      iex> Enum.sort(ExDatalog.Result.relations(result))
+      iex> knowledge = %ExDatalog.Knowledge{relations: %{"parent" => MapSet.new(), "ancestor" => MapSet.new()}, stats: %{iterations: 1, duration_us: 0, relation_sizes: %{}}}
+      iex> Enum.sort(ExDatalog.Knowledge.relations(knowledge))
       ["ancestor", "parent"]
 
   """

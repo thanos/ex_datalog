@@ -101,4 +101,33 @@ defmodule ExDatalog.Atom do
   end
 
   def valid?(_), do: false
+
+  @doc """
+  Constructs an atom from a shorthand tuple of the form `{relation, terms}`.
+
+  Each term in the list is converted using `Term.from/1`, which follows the
+  Prolog convention: uppercase atoms become variables, lowercase atoms and
+  other values become constants, and `:_` becomes a wildcard.
+
+  Accepts either a `{relation, terms}` tuple or an existing `%Atom{}` struct
+  (passed through unchanged).
+
+  ## Examples
+
+      iex> ExDatalog.Atom.from_tuple({"parent", [:X, :Y]})
+      %ExDatalog.Atom{relation: "parent", terms: [{:var, "X"}, {:var, "Y"}]}
+
+      iex> ExDatalog.Atom.from_tuple({"role", [:User, :_ ]})
+      %ExDatalog.Atom{relation: "role", terms: [{:var, "User"}, :wildcard]}
+
+      iex> ExDatalog.Atom.from_tuple({"value", [:X, 42]})
+      %ExDatalog.Atom{relation: "value", terms: [{:var, "X"}, {:const, 42}]}
+
+  """
+  @spec from_tuple({String.t(), [Term.shorthand()]} | t()) :: t()
+  def from_tuple({relation, terms}) when is_binary(relation) and is_list(terms) do
+    new(relation, Enum.map(terms, &Term.from/1))
+  end
+
+  def from_tuple(%__MODULE__{} = atom), do: atom
 end

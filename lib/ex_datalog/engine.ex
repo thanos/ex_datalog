@@ -9,7 +9,7 @@ defmodule ExDatalog.Engine do
 
   @type ir :: ExDatalog.IR.t()
   @type opts :: keyword()
-  @type reply :: {:ok, ExDatalog.Result.t()} | {:error, term()}
+  @type reply :: {:ok, ExDatalog.Knowledge.t()} | {:error, term()}
 
   @callback evaluate(ir, opts) :: reply
   @callback name() :: String.t()

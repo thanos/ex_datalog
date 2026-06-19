@@ -1,0 +1,828 @@
+<!-- livebook:{"persist_outputs":true} -->
+
+# ExDatalog Quickstart
+
+```elixir
+Mix.install([
+    {:ex_datalog, path: Path.expand("..", __DIR__), env: :prod},
+])
+```
+
+## Introduction
+
+**ExDatalog** is a production-grade Datalog engine for Elixir. It uses bottom-up
+semi-naive fixpoint evaluation with stratified negation, constraints, provenance
+tracking, and pluggable storage backends.
+
+In this tutorial you will learn:
+
+* How to define **relations**, **facts**, and **rules**
+* How to write **recursive** rules (transitive closure)
+* How to use **negation** with stratification
+* How to add **constraints** (comparisons, arithmetic, type checks, string predicates, membership)
+* How to **query** the knowledge base with `Knowledge.get` and `Knowledge.match`
+* How to switch **storage backends**
+* How to use **provenance** to explain derived facts
+
+---
+
+## Setup
+
+```elixir
+alias ExDatalog
+alias ExDatalog.{Program, Constraint, Knowledge}
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+[ExDatalog.Program, ExDatalog.Constraint, ExDatalog.Knowledge]
+```
+
+---
+
+## 1. Relations and Facts
+
+A Datalog program starts with **relations** (schemas) and **facts** (ground
+tuples that are unconditionally true).
+
+```elixir
+program =
+  Program.new()
+  |> Program.add_relation("parent", [:atom, :atom])
+  |> Program.add_relation("ancestor", [:atom, :atom])
+  |> Program.add_fact("parent", [:alice, :bob])
+  |> Program.add_fact("parent", [:bob, :carol])
+  |> Program.add_fact("parent", [:carol, :dave])
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+%ExDatalog.Program{
+  relations: %{
+    "ancestor" => %{arity: 2, types: [:atom, :atom]},
+    "parent" => %{arity: 2, types: [:atom, :atom]}
+  },
+  facts: [{"parent", [:carol, :dave]}, {"parent", [:bob, :carol]}, {"parent", [:alice, :bob]}],
+  rules: []
+}
+```
+
+`add_relation/3` defines a named relation with its column types. `add_fact/3`
+asserts a ground tuple. The arity of each fact must match its relation.
+
+---
+
+## 2. Rules
+
+Every rule has a **head** (what's being derived) and a **body** (the conditions).
+The `:-` separator reads as "if". All variables in the head must also appear in
+a positive body literal — this is called **range restriction** and it guarantees
+the engine can always bind every variable to a concrete value.
+
+The rule below reads: "X is an ancestor of Y *if* X is a parent of Y."
+`ancestor` is the head, `parent(X, Y)` is the body, and `X` and `Y` are
+**logic variables** — placeholders that the engine binds to actual values.
+
+### Recursive rule: transitive ancestry
+
+This is what makes Datalog powerful — a rule can reference its own head
+relation. The engine evaluates rules **bottom-up**: it starts with the facts,
+derives new facts by applying rules, and repeats until no new facts emerge
+(the **fixpoint**). Recursion is safe because Datalog guarantees termination.
+
+`ancestor(X, Z) :- parent(X, Y), ancestor(Y, Z).`
+
+This reads: "X is an ancestor of Z *if* X is a parent of some Y and Y is an
+ancestor of Z." The comma means "and" — all body literals must hold
+simultaneously. On each iteration, newly derived `ancestor` facts from the
+previous round feed back as `ancestor(Y, Z)` matches, extending the chain
+one hop at a time until no new pairs are found.
+
+```elixir
+program =
+  program
+  |> Program.add_rule(
+    {"ancestor", [:X, :Y]},
+    [{:positive, {"parent", [:X, :Y]}}]
+  )
+  |> Program.add_rule(
+    {"ancestor", [:X, :Z]},
+    [
+      {:positive, {"parent", [:X, :Y]}},
+      {:positive, {"ancestor", [:Y, :Z]}}
+    ]
+  )
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+%ExDatalog.Program{
+  relations: %{
+    "ancestor" => %{arity: 2, types: [:atom, :atom]},
+    "parent" => %{arity: 2, types: [:atom, :atom]}
+  },
+  facts: [{"parent", [:carol, :dave]}, {"parent", [:bob, :carol]}, {"parent", [:alice, :bob]}],
+  rules: [
+    %ExDatalog.Rule{
+      head: %ExDatalog.Atom{relation: "ancestor", terms: [var: "X", var: "Z"]},
+      body: [
+        positive: %ExDatalog.Atom{relation: "parent", terms: [var: "X", var: "Y"]},
+        positive: %ExDatalog.Atom{relation: "ancestor", terms: [var: "Y", var: "Z"]}
+      ],
+      constraints: []
+    },
+    %ExDatalog.Rule{
+      head: %ExDatalog.Atom{relation: "ancestor", terms: [var: "X", var: "Y"]},
+      body: [positive: %ExDatalog.Atom{relation: "parent", terms: [var: "X", var: "Y"]}],
+      constraints: []
+    }
+  ]
+}
+```
+
+## 3. Materializing Knowledge
+
+```elixir
+{:ok, knowledge} = ExDatalog.materialize(program)
+
+ancestors = Knowledge.get(knowledge, "ancestor")
+
+MapSet.to_list(ancestors)
+|> Enum.sort()
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+[alice: :bob, alice: :carol, alice: :dave, bob: :carol, bob: :dave, carol: :dave]
+```
+
+You should see all six ancestor facts — the three direct parent facts plus the
+three transitive ones:
+
+* `{:alice, :bob}`, `{:bob, :carol}`, `{:carol, :dave}` — base
+* `{:alice, :carol}`, `{:bob, :dave}` — one hop
+* `{:alice, :dave}` — two hops
+
+### Knowledge API
+
+```elixir
+# How many ancestor facts?
+Knowledge.size(knowledge, "ancestor")
+
+# List all relation names
+Knowledge.relations(knowledge)
+
+# Get all parent facts
+Knowledge.get(knowledge, "parent") |> MapSet.to_list()
+
+# Pattern-match: find all ancestors of carol
+Knowledge.match(knowledge, "ancestor", [:_, :carol]) |> MapSet.to_list()
+
+# Pattern-match: find everyone alice is an ancestor of
+Knowledge.match(knowledge, "ancestor", [:alice, :_]) |> MapSet.to_list()
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+[alice: :bob, alice: :carol, alice: :dave]
+```
+
+---
+
+## 4. Negation
+
+Negation uses `{:negative, ...}` body literals. Datalog requires **stratified
+negation** — no circular dependency through negation.
+
+`bachelor(X) :- male(X), not married(X, _).`
+
+```elixir
+program =
+  Program.new()
+  |> Program.add_relation("male", [:atom])
+  |> Program.add_relation("married", [:atom, :atom])
+  |> Program.add_relation("bachelor", [:atom])
+  |> Program.add_fact("male", [:alice])
+  |> Program.add_fact("male", [:bob])
+  |> Program.add_fact("married", [:alice, :carol])
+  |> Program.add_rule(
+    {"bachelor", [:X]},
+    [
+      {:positive, {"male", [:X]}},
+      {:negative, {"married", [:X, :_]}}
+    ]
+  )
+
+{:ok, knowledge} = ExDatalog.materialize(program)
+
+Knowledge.get(knowledge, "bachelor") |> MapSet.to_list()
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+[{:bob}]
+```
+
+Only `:bob` appears — `:alice` is excluded because she is married. The wildcard
+`:_` in the shorthand notation matches any second argument.
+
+---
+
+## 5. Constraints
+
+Constraints extend rules with comparisons, arithmetic, type checks, string
+predicates, and membership tests.
+
+### Comparison Constraints
+
+`gt`, `lt`, `gte`, `lte`, `eq`, `neq` — filter bindings.
+
+Find employees earning more than 100,000:
+
+```elixir
+program =
+  Program.new()
+  |> Program.add_relation("income", [:atom, :integer])
+  |> Program.add_relation("high_earner", [:atom])
+  |> Program.add_fact("income", [:alice, 120_000])
+  |> Program.add_fact("income", [:bob, 80_000])
+  |> Program.add_fact("income", [:carol, 150_000])
+  |> Program.add_rule(
+    {"high_earner", [:X]},
+    [{:positive, {"income", [:X, :S]}}],
+    [{:gt, :S, 100_000}]
+  )
+
+{:ok, knowledge} = ExDatalog.materialize(program)
+
+Knowledge.get(knowledge, "high_earner") |> MapSet.to_list()
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+[{:alice}, {:carol}]
+```
+
+### Arithmetic Constraints
+
+`add`, `sub`, `mul`, `div` — bind a result variable. Both inputs must be
+bound before evaluation.
+
+Compute the sum of two numbers:
+
+```elixir
+program =
+  Program.new()
+  |> Program.add_relation("pair", [:integer, :integer])
+  |> Program.add_relation("sum", [:integer, :integer, :integer])
+  |> Program.add_fact("pair", [3, 7])
+  |> Program.add_rule(
+    {"sum", [:A, :B, :C]},
+    [{:positive, {"pair", [:A, :B]}}],
+    [{:add, :A, :B, :C}]
+  )
+
+{:ok, knowledge} = ExDatalog.materialize(program)
+
+Knowledge.get(knowledge, "sum") |> MapSet.to_list()
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+[{3, 7, 10}]
+```
+
+> **Note:** Arithmetic constraints bind a *result* variable (`C` above).
+> Both input variables (`A` and `B`) must already be bound by positive body
+> atoms before the constraint fires. You cannot chain constraints where one
+> constraint's result feeds into the next — use a separate rule instead.
+
+### Type Predicate Constraints
+
+`type_integer/1`, `type_binary/1`, `type_atom/1` — filter by Elixir type.
+
+```elixir
+program =
+  Program.new()
+  |> Program.add_relation("value", [:atom, :any])
+  |> Program.add_relation("int_value", [:atom, :integer])
+  |> Program.add_fact("value", [:x, 42])
+  |> Program.add_fact("value", [:y, "hello"])
+  |> Program.add_fact("value", [:z, :ok])
+  |> Program.add_rule(
+    {"int_value", [:N, :V]},
+    [{:positive, {"value", [:N, :V]}}],
+    [{:is_integer, :V}]
+  )
+
+{:ok, knowledge} = ExDatalog.materialize(program)
+
+Knowledge.get(knowledge, "int_value") |> MapSet.to_list()
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+[x: 42]
+```
+
+Only `{:x, 42}` passes — `"hello"` and `:ok` are filtered out.
+
+### String Predicate Constraints
+
+`starts_with/2`, `contains/2` — filter string values.
+
+Find users whose email starts with `"admin."`:
+
+```elixir
+program =
+  Program.new()
+  |> Program.add_relation("user", [:atom, :string])
+  |> Program.add_relation("admin", [:atom])
+  |> Program.add_fact("user", [:alice, "admin.alice@example.com"])
+  |> Program.add_fact("user", [:bob, "bob@example.com"])
+  |> Program.add_rule(
+    {"admin", [:X]},
+    [{:positive, {"user", [:X, :E]}}],
+    [{:starts_with, :E, "admin."}]
+  )
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+%ExDatalog.Program{
+  relations: %{
+    "admin" => %{arity: 1, types: [:atom]},
+    "user" => %{arity: 2, types: [:atom, :string]}
+  },
+  facts: [{"user", [:bob, "bob@example.com"]}, {"user", [:alice, "admin.alice@example.com"]}],
+  rules: [
+    %ExDatalog.Rule{
+      head: %ExDatalog.Atom{relation: "admin", terms: [var: "X"]},
+      body: [positive: %ExDatalog.Atom{relation: "user", terms: [var: "X", var: "E"]}],
+      constraints: [
+        %ExDatalog.Constraint{
+          op: :starts_with,
+          left: {:var, "E"},
+          right: {:const, "admin."},
+          result: nil
+        }
+      ]
+    }
+  ]
+}
+```
+
+This rule reads: "X is an admin if there exists a user(X, E) where E starts
+with `"admin."`". The body atom binds `X` to the username and `E` to the email,
+then the constraint filters — only bindings where `E` begins with the prefix
+survive. Alice passes (`"admin.alice@example.com"` starts with `"admin."`),
+Bob does not (`"bob@example.com"` does not).
+
+```elixir
+{:ok, knowledge} = ExDatalog.materialize(program)
+
+Knowledge.get(knowledge, "admin") |> MapSet.to_list()
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+[{:alice}]
+```
+
+### Membership Constraint
+
+`member/2` — test whether a value belongs to a fixed list of values
+(wrapped in `Term.const/1`). The right-hand side must be a compile-time
+constant — you cannot pass a variable as the list.
+
+```elixir
+program =
+  Program.new()
+  |> Program.add_relation("employee", [:atom, :atom])
+  |> Program.add_relation("eng_employee", [:atom])
+  |> Program.add_fact("employee", [:alice, :engineering])
+  |> Program.add_fact("employee", [:bob, :sales])
+  |> Program.add_fact("employee", [:carol, :engineering])
+  |> Program.add_rule(
+    {"eng_employee", [:X]},
+    [{:positive, {"employee", [:X, :Dept]}}],
+    [{:member, :Dept, [:engineering, :infra]}]
+  )
+
+{:ok, knowledge} = ExDatalog.materialize(program)
+
+Knowledge.get(knowledge, "eng_employee") |> MapSet.to_list()
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+[{:alice}, {:carol}]
+```
+
+---
+
+## 6. A Practical Example — Network Reachability
+
+Computing **transitive closure** is one of Datalog's sweet spots. Transitive
+closure means deriving every reachability relationship in a graph — not just
+direct connections, but every indirect path too. If A links to B, and B links
+to C, then A also reaches C (through B), even though there's no direct edge
+from A to C. The "closure" means you keep following connections until nothing
+new is discovered.
+
+You write the rule once and the engine derives all indirect connections
+automatically via fixpoint iteration. In the example below, the `link` relation
+only has direct edges (a→b, b→c, c→d, d→e), but the `reachable` rule derives
+every path you can traverse through those edges — including a→c, a→d, a→e,
+b→d, b→e, c→e.
+
+```elixir
+program =
+  Program.new()
+  |> Program.add_relation("link", [:atom, :atom])
+  |> Program.add_relation("reachable", [:atom, :atom])
+  |> Program.add_relation("blocked", [:atom, :atom])
+  |> Program.add_relation("allowed", [:atom, :atom])
+  |> Program.add_relation("violation", [:atom, :atom])
+  # Network topology
+  |> Program.add_fact("link", [:a, :b])
+  |> Program.add_fact("link", [:b, :c])
+  |> Program.add_fact("link", [:c, :d])
+  |> Program.add_fact("link", [:d, :e])
+  # Firewall: only certain links are explicitly allowed
+  |> Program.add_fact("blocked", [:c, :d])
+  # Rules
+  |> Program.add_rule(
+    {"reachable", [:X, :Y]},
+    [{:positive, {"link", [:X, :Y]}}]
+  )
+  |> Program.add_rule(
+    {"reachable", [:X, :Z]},
+    [
+      {:positive, {"link", [:X, :Y]}},
+      {:positive, {"reachable", [:Y, :Z]}}
+    ]
+  )
+  |> Program.add_rule(
+    {"allowed", [:X, :Y]},
+    [
+      {:positive, {"reachable", [:X, :Y]}},
+      {:negative, {"blocked", [:X, :Y]}}
+    ]
+  )
+
+{:ok, knowledge} = ExDatalog.materialize(program)
+
+IO.puts("Reachable paths:")
+Knowledge.get(knowledge, "reachable") |> MapSet.to_list() |> Enum.sort() |> IO.inspect()
+
+IO.puts("\nAllowed paths (reachable and not blocked):")
+Knowledge.get(knowledge, "allowed") |> MapSet.to_list() |> Enum.sort() |> IO.inspect()
+
+IO.puts("\nBlocked paths:")
+Knowledge.get(knowledge, "blocked") |> MapSet.to_list() |> Enum.sort() |> IO.inspect()
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+Reachable paths:
+[a: :b, a: :c, a: :d, a: :e, b: :c, b: :d, b: :e, c: :d, c: :e, d: :e]
+
+Allowed paths (reachable and not blocked):
+[a: :b, a: :c, a: :d, a: :e, b: :c, b: :d, b: :e, c: :e, d: :e]
+
+Blocked paths:
+[c: :d]
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+[c: :d]
+```
+
+---
+
+## 7. Storage Backends
+
+ExDatalog ships with two storage backends:
+
+* **`ExDatalog.Storage.Map`** (default) — on-heap, suitable for <100K facts.
+* **`ExDatalog.Storage.ETS`** — off-heap, concurrent reads, suitable for >100K facts.
+
+```elixir
+# Use the ETS backend for large fact sets
+{:ok, knowledge_ets} = ExDatalog.materialize(program, storage: ExDatalog.Storage.ETS)
+
+# Knowledge bases are identical regardless of backend
+Knowledge.get(knowledge_ets, "reachable") == Knowledge.get(knowledge, "reachable")
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+true
+```
+
+Both backends guarantee **deterministic ordering** — identical programs produce
+identical results.
+
+---
+
+## 8. Provenance and Explain
+
+**Provenance tracking** records *how* each derived fact came to be. Without it,
+the knowledge base tells you *what* is true but not *why*. With it, every
+derived fact carries a trace of which rule produced it and which input facts
+fed into that rule — forming a **derivation tree** you can inspect or debug.
+Base facts (the ones you asserted with `add_fact`) are attributed as `:base_fact`,
+while derived facts point to the rule ID that produced them.
+
+Enable provenance tracking with `explain: true`:
+
+```elixir
+program =
+  Program.new()
+  |> Program.add_relation("parent", [:atom, :atom])
+  |> Program.add_relation("ancestor", [:atom, :atom])
+  |> Program.add_fact("parent", [:alice, :bob])
+  |> Program.add_fact("parent", [:bob, :carol])
+  |> Program.add_rule(
+    {"ancestor", [:X, :Y]},
+    [{:positive, {"parent", [:X, :Y]}}]
+  )
+  |> Program.add_rule(
+    {"ancestor", [:X, :Z]},
+    [
+      {:positive, {"parent", [:X, :Y]}},
+      {:positive, {"ancestor", [:Y, :Z]}}
+    ]
+  )
+
+{:ok, knowledge} = ExDatalog.materialize(program, explain: true)
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+{:ok,
+ %ExDatalog.Knowledge{
+   relations: %{
+     "ancestor" => MapSet.new([alice: :bob, alice: :carol, bob: :carol]),
+     "parent" => MapSet.new([alice: :bob, bob: :carol])
+   },
+   stats: %{
+     capabilities: %ExDatalog.Capabilities{
+       storage_type: :map,
+       indexed_lookup: false,
+       concurrent_reads: false,
+       arithmetic_constraints: true,
+       comparison_constraints: true,
+       type_predicates: true,
+       string_predicates: true,
+       provenance: true,
+       external_execution: false
+     },
+     relation_sizes: %{"ancestor" => 3, "parent" => 2},
+     duration_us: 97,
+     iterations: 2
+   },
+   provenance: %{
+     rules: %{
+       0 => %ExDatalog.IR.Rule{
+         id: 0,
+         head: %ExDatalog.IR.Atom{relation: "ancestor", terms: [var: "X", var: "Y"]},
+         body: [positive: %ExDatalog.IR.Atom{relation: "parent", terms: [var: "X", var: "Y"]}],
+         stratum: 0,
+         metadata: %{}
+       },
+       1 => %ExDatalog.IR.Rule{
+         id: 1,
+         head: %ExDatalog.IR.Atom{relation: "ancestor", terms: [var: "X", var: "Z"]},
+         body: [
+           positive: %ExDatalog.IR.Atom{relation: "parent", terms: [var: "X", var: "Y"]},
+           positive: %ExDatalog.IR.Atom{relation: "ancestor", terms: [var: "Y", var: "Z"]}
+         ],
+         stratum: 0,
+         metadata: %{}
+       }
+     },
+     fact_origins: %{
+       "ancestor" => %{{:alice, :bob} => 0, {:alice, :carol} => 1, {:bob, :carol} => 0},
+       "parent" => %{{:alice, :bob} => :base, {:bob, :carol} => :base}
+     }
+   }
+ }}
+```
+
+### Explain a base fact
+
+```elixir
+ExDatalog.Explain.explain(knowledge, "ancestor", {:alice, :bob})
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+{:ok, %ExDatalog.Explain.Node{fact: {:alice, :bob}, rule_id: 0, children: [:base_fact, :base_fact]}}
+```
+
+Returns `:base_fact` — `{:alice, :bob}` was derived directly from the base
+rule `ancestor(X,Y) :- parent(X,Y)`.
+
+### Explain a derived fact
+
+```elixir
+ExDatalog.Explain.explain(knowledge, "ancestor", {:alice, :carol})
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+{:ok,
+ %ExDatalog.Explain.Node{
+   fact: {:alice, :carol},
+   rule_id: 1,
+   children: [
+     :base_fact,
+     :base_fact,
+     %ExDatalog.Explain.Node{fact: {:alice, :bob}, rule_id: 0, children: [:base_fact, :base_fact]},
+     %ExDatalog.Explain.Node{fact: {:alice, :carol}, rule_id: 1, children: []},
+     %ExDatalog.Explain.Node{fact: {:bob, :carol}, rule_id: 0, children: [:base_fact, :base_fact]}
+   ]
+ }}
+```
+
+Returns a derivation tree showing which rule produced this fact and which
+sub-facts it depended on.
+
+### Without provenance
+
+```elixir
+{:ok, no_prov} = ExDatalog.materialize(program)
+
+ExDatalog.Explain.explain(no_prov, "ancestor", {:alice, :bob})
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+{:error, :no_provenance}
+```
+
+Returns `{:error, :no_provenance}` — provenance tracking was not enabled.
+
+---
+
+## 9. Step-by-Step Pipeline
+
+You can also run the pipeline steps individually instead of using the
+one-shot `materialize/2`:
+
+```elixir
+program =
+  Program.new()
+  |> Program.add_relation("edge", [:atom, :atom])
+  |> Program.add_relation("path", [:atom, :atom])
+  |> Program.add_fact("edge", [:a, :b])
+  |> Program.add_fact("edge", [:b, :c])
+  |> Program.add_rule(
+    {"path", [:X, :Y]},
+    [{:positive, {"edge", [:X, :Y]}}]
+  )
+  |> Program.add_rule(
+    {"path", [:X, :Z]},
+    [
+      {:positive, {"edge", [:X, :Y]}},
+      {:positive, {"path", [:Y, :Z]}}
+    ]
+  )
+
+# Step 1: Validate
+{:ok, validated} = ExDatalog.validate(program)
+
+# Step 2: Compile to IR
+{:ok, ir} = ExDatalog.compile(validated)
+
+# Step 3: Evaluate
+{:ok, knowledge} = ExDatalog.evaluate(ir, [])
+
+Knowledge.get(knowledge, "path") |> MapSet.to_list() |> Enum.sort()
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+[a: :b, a: :c, b: :c]
+```
+
+This is useful for debugging — if validation fails, you get structured errors:
+
+```elixir
+bad_program =
+  Program.new()
+  |> Program.add_relation("edge", [:atom, :atom])
+  |> Program.add_fact("edge", [:only_one_arg])
+
+ExDatalog.validate(bad_program)
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+{:error, "arity mismatch for relation \"edge\": expected 2 values, got 1"}
+```
+
+Returns `{:error, "arity mismatch for relation \"edge\": expected 2 values, got 1"}`.
+
+---
+
+## 10. Evaluation Options
+
+`ExDatalog.materialize/2` and `ExDatalog.evaluate/2` accept these options:
+
+| Option            | Default                  | Description                             |
+| ----------------- | ------------------------ | --------------------------------------- |
+| `:engine`         | `ExDatalog.Engine.Naive` | Evaluation backend                      |
+| `:storage`        | `ExDatalog.Storage.Map`  | Storage backend                         |
+| `:storage_opts`   | `[]`                     | Storage options (e.g., ETS access mode) |
+| `:max_iterations` | `10_000`                 | Fixpoint iteration limit                |
+| `:timeout_ms`     | `30_000`                 | Wall-clock timeout in milliseconds      |
+| `:explain`        | `false`                  | Enable provenance tracking              |
+
+```elixir
+{:ok, knowledge} =
+  ExDatalog.materialize(program,
+    storage: ExDatalog.Storage.ETS,
+    storage_opts: [access: :public],
+    max_iterations: 1_000,
+    timeout_ms: 5_000
+  )
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+{:ok,
+ %ExDatalog.Knowledge{
+   relations: %{"edge" => MapSet.new([a: :b, b: :c]), "path" => MapSet.new([a: :b, a: :c, b: :c])},
+   stats: %{
+     capabilities: %ExDatalog.Capabilities{
+       storage_type: :ets,
+       indexed_lookup: true,
+       concurrent_reads: true,
+       arithmetic_constraints: true,
+       comparison_constraints: true,
+       type_predicates: true,
+       string_predicates: true,
+       provenance: true,
+       external_execution: false
+     },
+     relation_sizes: %{"edge" => 2, "path" => 3},
+     duration_us: 167,
+     iterations: 2
+   },
+   provenance: nil
+ }}
+```
+
+---
+
+## Summary
+
+| Concept          | API                                                              |
+| ---------------- | ---------------------------------------------------------------- |
+| Create program   | `Program.new()`                                                  |
+| Define relation  | `Program.add_relation(program, name, types)`                     |
+| Add fact         | `Program.add_fact(program, name, values)`                        |
+| Add rule         | `Program.add_rule(program, {"rel", [terms]}, body, constraints)` |
+| Variable         | `:X` (uppercase atom in shorthand)                               |
+| Constant         | `:alice` or `42` (lowercase atom or value in shorthand)          |
+| Wildcard         | `:_` in shorthand                                                |
+| Positive literal | `{:positive, {"rel", [terms]}}`                                  |
+| Negative literal | `{:negative, {"rel", [terms]}}`                                  |
+| Comparison       | `{:gt, :X, 100_000}`, `{:neq, :A, :B}`, ...                      |
+| Arithmetic       | `{:add, :X, :Y, :Z}`, `{:sub, :A, :B, :C}`, ...                  |
+| Type check       | `{:is_integer, :V}`, `{:is_binary, :S}`, `{:is_atom, :A}`        |
+| String predicate | `{:starts_with, :E, "prefix"}`, `{:contains, :S, "sub"}`         |
+| Membership       | `{:member, :X, [:a, :b, :c]}`                                    |
+| Materialize      | `ExDatalog.materialize(program, opts)`                           |
+| Get knowledge    | `Knowledge.get(knowledge, relation)`                             |
+| Pattern match    | `Knowledge.match(knowledge, relation, pattern)`                  |
+| Explain          | `ExDatalog.Explain.explain(knowledge, relation, tuple)`          |
+| ETS backend      | `ExDatalog.materialize(program, storage: ExDatalog.Storage.ETS)` |
+
+For more details, see the [API documentation](https://hexdocs.pm/ex_datalog).

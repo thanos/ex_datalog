@@ -166,4 +166,46 @@ defmodule ExDatalog.TermTest do
       assert Term.variables([]) == []
     end
   end
+
+  describe "from/1" do
+    test "converts uppercase atom to variable" do
+      assert Term.from(:A) == {:var, "A"}
+    end
+
+    test "converts multi-char uppercase atom to variable" do
+      assert Term.from(:Pkg) == {:var, "Pkg"}
+    end
+
+    test "converts underscore atom to wildcard" do
+      assert Term.from(:_) == :wildcard
+    end
+
+    test "converts lowercase atom to constant" do
+      assert Term.from(:alice) == {:const, :alice}
+    end
+
+    test "converts integer to constant" do
+      assert Term.from(42) == {:const, 42}
+    end
+
+    test "converts string to constant" do
+      assert Term.from("hello") == {:const, "hello"}
+    end
+
+    test "converts list to constant" do
+      assert Term.from([:a, :b]) == {:const, [:a, :b]}
+    end
+
+    test "passes through existing var term" do
+      assert Term.from({:var, "X"}) == {:var, "X"}
+    end
+
+    test "passes through existing const term" do
+      assert Term.from({:const, :alice}) == {:const, :alice}
+    end
+
+    test "passes through existing wildcard" do
+      assert Term.from(:wildcard) == :wildcard
+    end
+  end
 end

@@ -1,11 +1,11 @@
 defmodule ExDatalog.ExplainTest do
   use ExUnit.Case, async: true
 
-  alias ExDatalog.{Atom, Explain, Program, Result, Rule, Term}
+  alias ExDatalog.{Atom, Explain, Knowledge, Program, Rule, Term}
 
   describe "explain/3 with no provenance" do
     test "returns error when provenance is nil" do
-      result = %Result{
+      result = %Knowledge{
         relations: %{"parent" => MapSet.new([{:alice, :bob}])},
         stats: %{iterations: 1, duration_us: 0, relation_sizes: %{"parent" => 1}},
         provenance: nil
@@ -21,7 +21,7 @@ defmodule ExDatalog.ExplainTest do
         Program.new()
         |> Program.add_relation("parent", [:atom, :atom])
         |> Program.add_fact("parent", [:alice, :bob])
-        |> ExDatalog.query(explain: true)
+        |> ExDatalog.materialize(explain: true)
 
       assert {:ok, :base_fact} = Explain.explain(result, "parent", {:alice, :bob})
     end
@@ -38,7 +38,7 @@ defmodule ExDatalog.ExplainTest do
             [{:positive, Atom.new("parent", [Term.var("X"), Term.var("Y")])}]
           )
         )
-        |> ExDatalog.query(explain: true)
+        |> ExDatalog.materialize(explain: true)
 
       assert {:ok, tree} = Explain.explain(result, "ancestor", {:alice, :bob})
       assert %Explain.Node{} = tree
@@ -69,7 +69,7 @@ defmodule ExDatalog.ExplainTest do
             ]
           )
         )
-        |> ExDatalog.query(explain: true)
+        |> ExDatalog.materialize(explain: true)
 
       # Direct derivation: parent -> ancestor
       # The direct rule (single body atom) derives ancestor(alice, bob)
@@ -93,7 +93,7 @@ defmodule ExDatalog.ExplainTest do
         Program.new()
         |> Program.add_relation("parent", [:atom, :atom])
         |> Program.add_fact("parent", [:alice, :bob])
-        |> ExDatalog.query(explain: true)
+        |> ExDatalog.materialize(explain: true)
 
       assert {:error, :not_found} = Explain.explain(result, "parent", {:charlie, :dave})
     end
@@ -116,7 +116,7 @@ defmodule ExDatalog.ExplainTest do
             ]
           )
         )
-        |> ExDatalog.query(explain: true)
+        |> ExDatalog.materialize(explain: true)
 
       assert {:ok, tree} = Explain.explain(result, "bachelor", {:bob})
       assert tree.rule_id == 0
@@ -129,7 +129,7 @@ defmodule ExDatalog.ExplainTest do
         |> Program.add_relation("person", [:atom])
         |> Program.add_fact("person", [:alice])
         |> Program.add_fact("person", [:bob])
-        |> ExDatalog.query(explain: true)
+        |> ExDatalog.materialize(explain: true)
 
       assert result.provenance != nil
       origins = result.provenance.fact_origins
@@ -149,7 +149,7 @@ defmodule ExDatalog.ExplainTest do
             [{:positive, Atom.new("edge", [Term.var("X"), Term.var("Y")])}]
           )
         )
-        |> ExDatalog.query(explain: true)
+        |> ExDatalog.materialize(explain: true)
 
       origins = result.provenance.fact_origins
       assert origins["edge"][{:a, :b}] == :base
