@@ -362,7 +362,11 @@ defmodule ExDatalog.ProgramTest do
       rule = hd(program.rules)
       assert rule.head.relation == "ancestor"
       assert rule.head.terms == [{:var, "X"}, {:var, "Y"}]
-      assert rule.body == [{:positive, %Atom{relation: "parent", terms: [{:var, "X"}, {:var, "Y"}]}}]
+
+      assert rule.body == [
+               {:positive, %Atom{relation: "parent", terms: [{:var, "X"}, {:var, "Y"}]}}
+             ]
+
       assert rule.constraints == []
     end
 
@@ -520,7 +524,10 @@ defmodule ExDatalog.ProgramTest do
         )
 
       rule = hd(program.rules)
-      assert rule.constraints == [Constraint.member(Term.var("Dept"), Term.const([:engineering, :infra]))]
+
+      assert rule.constraints == [
+               Constraint.member(Term.var("Dept"), Term.const([:engineering, :infra]))
+             ]
     end
 
     test "mixes shorthand and struct body literals" do

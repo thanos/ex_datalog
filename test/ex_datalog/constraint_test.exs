@@ -455,11 +455,11 @@ defmodule ExDatalog.ConstraintTest do
       assert :filter = Constraint.evaluate(c, %{"X" => :atom}, %ExDatalog.Constraint.Context{})
     end
 
-test "dispatches membership through public struct" do
+    test "dispatches membership through public struct" do
       c = Constraint.member(@x, Term.const([:a, :b, :c]))
 
       assert {:ok, %{"X" => :a}} =
-                Constraint.evaluate(c, %{"X" => :a}, %ExDatalog.Constraint.Context{})
+               Constraint.evaluate(c, %{"X" => :a}, %ExDatalog.Constraint.Context{})
 
       assert :filter = Constraint.evaluate(c, %{"X" => :z}, %ExDatalog.Constraint.Context{})
     end

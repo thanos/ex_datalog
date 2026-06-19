@@ -244,6 +244,7 @@ defmodule ExDatalog.Term do
   def from({:var, _} = var), do: var
   def from({:const, _} = const), do: const
   def from(:wildcard), do: :wildcard
+
   def from(atom) when is_atom(atom) do
     name = Kernel.to_string(atom)
 
