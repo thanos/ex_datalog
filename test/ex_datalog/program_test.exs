@@ -265,6 +265,114 @@ defmodule ExDatalog.ProgramTest do
     end
   end
 
+  describe "add_rule/2 with constraints" do
+    test "adds a rule with a comparison constraint" do
+      program =
+        Program.new()
+        |> Program.add_relation("value", [:atom, :integer])
+        |> Program.add_relation("big", [:atom, :integer])
+        |> Program.add_rule(
+          Rule.new(
+            Atom.new("big", [Term.var("N"), Term.var("V")]),
+            [{:positive, Atom.new("value", [Term.var("N"), Term.var("V")])}],
+            [Constraint.gt(Term.var("V"), Term.const(5))]
+          )
+        )
+
+      assert length(program.rules) == 1
+      rule = hd(program.rules)
+      assert length(rule.constraints) == 1
+      assert hd(rule.constraints).op == :gt
+    end
+
+    test "adds a rule with an arithmetic constraint" do
+      program =
+        Program.new()
+        |> Program.add_relation("pair", [:integer, :integer])
+        |> Program.add_relation("sum", [:integer, :integer, :integer])
+        |> Program.add_rule(
+          Rule.new(
+            Atom.new("sum", [Term.var("A"), Term.var("B"), Term.var("C")]),
+            [{:positive, Atom.new("pair", [Term.var("A"), Term.var("B")])}],
+            [Constraint.add(Term.var("A"), Term.var("B"), Term.var("C"))]
+          )
+        )
+
+      rule = hd(program.rules)
+      assert length(rule.constraints) == 1
+      assert hd(rule.constraints).op == :add
+    end
+
+    test "adds a rule with a type predicate constraint" do
+      program =
+        Program.new()
+        |> Program.add_relation("value", [:atom, :any])
+        |> Program.add_relation("int_val", [:atom, :any])
+        |> Program.add_rule(
+          Rule.new(
+            Atom.new("int_val", [Term.var("N"), Term.var("V")]),
+            [{:positive, Atom.new("value", [Term.var("N"), Term.var("V")])}],
+            [Constraint.type_integer(Term.var("V"))]
+          )
+        )
+
+      rule = hd(program.rules)
+      assert length(rule.constraints) == 1
+      assert hd(rule.constraints).op == :is_integer
+    end
+  end
+
+  describe "add_rule/2 fact rules" do
+    test "adds a rule with empty positive body (fact rule)" do
+      program =
+        Program.new()
+        |> Program.add_relation("always", [:atom])
+        |> Program.add_rule(
+          Rule.new(
+            Atom.new("always", [Term.const(:yes)]),
+            []
+          )
+        )
+
+      assert length(program.rules) == 1
+      assert hd(program.rules).body == []
+    end
+  end
+
+  describe "add_fact edge cases" do
+    test "rejects nested list values" do
+      program = Program.new() |> Program.add_relation("data", [:any])
+      assert {:error, msg} = Program.add_fact(program, "data", [[:a, :b]])
+      assert msg =~ "unsupported fact value" or msg =~ "not supported"
+    end
+
+    test "rejects map values" do
+      program = Program.new() |> Program.add_relation("data", [:any])
+      assert {:error, _} = Program.add_fact(program, "data", [%{a: 1}])
+    end
+
+    test "rejects tuple values" do
+      program = Program.new() |> Program.add_relation("data", [:any])
+      assert {:error, _} = Program.add_fact(program, "data", [{:a, :b}])
+    end
+  end
+
+  describe "add_relation edge cases" do
+    test "returns error for non-string name (atom)" do
+      assert {:error, msg} = Program.add_relation(Program.new(), :parent, [:atom, :atom])
+      assert msg =~ "non-empty string"
+    end
+
+    test "returns error for non-list types (tuple)" do
+      assert {:error, msg} = Program.add_relation(Program.new(), "r", {:atom, :atom})
+      assert msg =~ "non-empty list"
+    end
+
+    test "returns error for nil name" do
+      assert {:error, _} = Program.add_relation(Program.new(), nil, [:atom])
+    end
+  end
+
   describe "pipeline chaining" do
     test "full program construction pipeline" do
       program =

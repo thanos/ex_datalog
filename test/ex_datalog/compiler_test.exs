@@ -176,7 +176,172 @@ defmodule ExDatalog.CompilerTest do
     end
   end
 
-  describe "IR rule ordering" do
+  describe "compile/1 with constraint types" do
+    test "compiles a rule with comparison constraint" do
+      program =
+        Program.new()
+        |> Program.add_relation("income", [:atom, :integer])
+        |> Program.add_relation("high", [:atom, :integer])
+        |> Program.add_rule(
+          Rule.new(
+            Atom.new("high", [Term.var("N"), Term.var("V")]),
+            [{:positive, Atom.new("income", [Term.var("N"), Term.var("V")])}],
+            [Constraint.gt(Term.var("V"), Term.const(100))]
+          )
+        )
+
+      assert {:ok, ir} = Compiler.compile(program)
+      rule = hd(ir.rules)
+      constraints = for {:constraint, c} <- rule.body, do: c
+      assert length(constraints) == 1
+      assert hd(constraints).op == :gt
+    end
+
+    test "compiles a rule with type predicate constraint" do
+      program =
+        Program.new()
+        |> Program.add_relation("value", [:atom, :any])
+        |> Program.add_relation("int_value", [:atom, :any])
+        |> Program.add_rule(
+          Rule.new(
+            Atom.new("int_value", [Term.var("N"), Term.var("V")]),
+            [{:positive, Atom.new("value", [Term.var("N"), Term.var("V")])}],
+            [Constraint.type_integer(Term.var("V"))]
+          )
+        )
+
+      assert {:ok, ir} = Compiler.compile(program)
+      rule = hd(ir.rules)
+      constraints = for {:constraint, c} <- rule.body, do: c
+      assert length(constraints) == 1
+      assert hd(constraints).op == :is_integer
+      assert hd(constraints).right == nil
+    end
+
+    test "compiles a rule with neq constraint" do
+      program =
+        Program.new()
+        |> Program.add_relation("edge", [:atom, :atom])
+        |> Program.add_relation("different", [:atom, :atom])
+        |> Program.add_rule(
+          Rule.new(
+            Atom.new("different", [Term.var("X"), Term.var("Y")]),
+            [{:positive, Atom.new("edge", [Term.var("X"), Term.var("Y")])}],
+            [Constraint.neq(Term.var("X"), Term.var("Y"))]
+          )
+        )
+
+      assert {:ok, ir} = Compiler.compile(program)
+      rule = hd(ir.rules)
+      constraints = for {:constraint, c} <- rule.body, do: c
+      assert length(constraints) == 1
+      assert hd(constraints).op == :neq
+    end
+
+    test "compiles a rule with string predicate constraint" do
+      program =
+        Program.new()
+        |> Program.add_relation("name", [:atom, :string])
+        |> Program.add_relation("a_name", [:atom, :string])
+        |> Program.add_rule(
+          Rule.new(
+            Atom.new("a_name", [Term.var("N"), Term.var("S")]),
+            [{:positive, Atom.new("name", [Term.var("N"), Term.var("S")])}],
+            [Constraint.starts_with(Term.var("S"), Term.const("A"))]
+          )
+        )
+
+      assert {:ok, ir} = Compiler.compile(program)
+      rule = hd(ir.rules)
+      constraints = for {:constraint, c} <- rule.body, do: c
+      assert length(constraints) == 1
+      assert hd(constraints).op == :starts_with
+    end
+
+    test "compiles a rule with membership constraint" do
+      program =
+        Program.new()
+        |> Program.add_relation("employee", [:atom, :atom])
+        |> Program.add_relation("eng", [:atom])
+        |> Program.add_rule(
+          Rule.new(
+            Atom.new("eng", [Term.var("X")]),
+            [{:positive, Atom.new("employee", [Term.var("X"), Term.var("D")])}],
+            [Constraint.member(Term.var("D"), Term.const([:engineering, :infra]))]
+          )
+        )
+
+      assert {:ok, ir} = Compiler.compile(program)
+      rule = hd(ir.rules)
+      constraints = for {:constraint, c} <- rule.body, do: c
+      assert length(constraints) == 1
+      assert hd(constraints).op == :member
+    end
+  end
+
+  describe "compile/1 fact value types" do
+    test "compiles facts with integer values" do
+      program =
+        Program.new()
+        |> Program.add_relation("age", [:atom, :integer])
+        |> Program.add_fact("age", [:alice, 30])
+
+      assert {:ok, ir} = Compiler.compile(program)
+      fact = hd(ir.facts)
+      assert fact.values == [{:atom, :alice}, {:int, 30}]
+    end
+
+    test "compiles facts with string values" do
+      program =
+        Program.new()
+        |> Program.add_relation("label", [:string])
+        |> Program.add_fact("label", ["hello"])
+
+      assert {:ok, ir} = Compiler.compile(program)
+      fact = hd(ir.facts)
+      assert fact.values == [{:str, "hello"}]
+    end
+
+    test "compiles facts with atom values" do
+      program =
+        Program.new()
+        |> Program.add_relation("parent", [:atom, :atom])
+        |> Program.add_fact("parent", [:alice, :bob])
+
+      assert {:ok, ir} = Compiler.compile(program)
+      fact = hd(ir.facts)
+      assert fact.values == [{:atom, :alice}, {:atom, :bob}]
+    end
+
+    test "facts are sorted deterministically" do
+      program =
+        Program.new()
+        |> Program.add_relation("parent", [:atom, :atom])
+        |> Program.add_fact("parent", [:z, :a])
+        |> Program.add_fact("parent", [:a, :z])
+        |> Program.add_fact("parent", [:m, :m])
+
+      assert {:ok, ir} = Compiler.compile(program)
+      values = Enum.map(ir.facts, & &1.values)
+      assert values == [[{:atom, :a}, {:atom, :z}], [{:atom, :m}, {:atom, :m}], [{:atom, :z}, {:atom, :a}]]
+    end
+  end
+
+  describe "compile/1 IR from_term list values" do
+    test "IR.from_term converts const list with mixed types" do
+      assert IR.from_term({:const, [1, :a, "hello"]}) == {:const, {:list, [{:int, 1}, {:atom, :a}, {:str, "hello"}]}}
+    end
+
+    test "IR.from_term converts const nested list" do
+      assert IR.from_term({:const, [:x]}) == {:const, {:list, [{:atom, :x}]}}
+    end
+
+    test "IR.value_to_native converts list" do
+      assert IR.value_to_native({:list, [{:int, 1}, {:atom, :foo}]}) == [1, :foo]
+    end
+  end
+
+  describe "IR rule body ordering" do
     test "rules are sorted by (stratum, relation_name, rule_id)" do
       program =
         Program.new()

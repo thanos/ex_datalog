@@ -271,6 +271,107 @@ defmodule ExDatalog.ValidatorTest do
     end
   end
 
+  describe "Phase 1: fact validation" do
+    test "fact referencing undefined relation produces error" do
+      program =
+        Program.new()
+        |> Program.add_relation("edge", [:atom, :atom])
+        |> then(&%{&1 | facts: [{"nonexistent", [:a, :b]}]})
+
+      assert {:error, errors} = ExDatalog.validate(program)
+      assert Enum.any?(errors, &(&1.kind == :undefined_relation))
+    end
+
+    test "fact arity mismatch produces error" do
+      program =
+        Program.new()
+        |> Program.add_relation("edge", [:atom, :atom])
+        |> then(&%{&1 | facts: [{"edge", [:a]}]})
+
+      assert {:error, errors} = ExDatalog.validate(program)
+      assert Enum.any?(errors, &(&1.kind == :arity_mismatch))
+    end
+
+    test "multiple fact errors are collected" do
+      program =
+        Program.new()
+        |> Program.add_relation("edge", [:atom, :atom])
+        |> then(&%{&1 | facts: [{"unknown1", [:a]}, {"unknown2", [:b]}]})
+
+      assert {:error, errors} = ExDatalog.validate(program)
+      undef_errors = Enum.filter(errors, &(&1.kind == :undefined_relation))
+      assert length(undef_errors) == 2
+    end
+  end
+
+  describe "Phase 1: empty programs" do
+    test "empty program validates ok" do
+      assert {:ok, _} = ExDatalog.validate(Program.new())
+    end
+
+    test "program with only facts validates ok" do
+      program =
+        Program.new()
+        |> Program.add_relation("edge", [:atom, :atom])
+        |> Program.add_fact("edge", [:a, :b])
+
+      assert {:ok, _} = ExDatalog.validate(program)
+    end
+  end
+
+  describe "Phase 2: constraint validation" do
+    test "comparison constraint with bound variables validates ok" do
+      program =
+        Program.new()
+        |> Program.add_relation("value", [:atom, :integer])
+        |> Program.add_relation("big", [:atom, :integer])
+        |> Program.add_rule(
+          Rule.new(
+            Atom.new("big", [Term.var("N"), Term.var("V")]),
+            [{:positive, Atom.new("value", [Term.var("N"), Term.var("V")])}],
+            [Constraint.gt(Term.var("V"), Term.const(5))]
+          )
+        )
+
+      assert {:ok, _} = ExDatalog.validate(program)
+    end
+
+    test "arithmetic constraint with bound inputs and result in head validates ok" do
+      program =
+        Program.new()
+        |> Program.add_relation("pair", [:integer, :integer])
+        |> Program.add_relation("sum", [:integer, :integer, :integer])
+        |> Program.add_rule(
+          Rule.new(
+            Atom.new("sum", [Term.var("A"), Term.var("B"), Term.var("C")]),
+            [{:positive, Atom.new("pair", [Term.var("A"), Term.var("B")])}],
+            [Constraint.add(Term.var("A"), Term.var("B"), Term.var("C"))]
+          )
+        )
+
+      assert {:ok, _} = ExDatalog.validate(program)
+    end
+
+    test "negative body atom validates ok when stratifiable" do
+      program =
+        Program.new()
+        |> Program.add_relation("person", [:atom])
+        |> Program.add_relation("blocked", [:atom])
+        |> Program.add_relation("unblocked", [:atom])
+        |> Program.add_rule(
+          Rule.new(
+            Atom.new("unblocked", [Term.var("X")]),
+            [
+              {:positive, Atom.new("person", [Term.var("X")])},
+              {:negative, Atom.new("blocked", [Term.var("X")])}
+            ]
+          )
+        )
+
+      assert {:ok, _} = ExDatalog.validate(program)
+    end
+  end
+
   describe "validate/1 idempotency" do
     test "validate returns the program struct unchanged" do
       program =
