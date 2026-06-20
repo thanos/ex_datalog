@@ -149,7 +149,7 @@ defmodule ExDatalog.Engine.Naive do
           nil
         end
 
-      {state_final, total_iterations, origins} =
+      {state_final, total_iterations, origins, termination} =
         eval_strata(
           state0,
           ir.strata,
@@ -162,16 +162,17 @@ defmodule ExDatalog.Engine.Naive do
         )
 
       result =
-        build_result(
-          state_final,
-          schemas,
-          storage_mod,
-          total_iterations,
-          start_time,
-          explain,
-          ir,
-          origins
-        )
+        build_result(%{
+          state: state_final,
+          schemas: schemas,
+          storage_mod: storage_mod,
+          total_iterations: total_iterations,
+          start_time: start_time,
+          explain: explain,
+          ir: ir,
+          origins: origins,
+          termination: termination
+        })
 
       caps = storage_mod.capabilities(state_final)
 
@@ -189,16 +190,17 @@ defmodule ExDatalog.Engine.Naive do
     end
   end
 
-  defp build_result(
-         state,
-         schemas,
-         storage_mod,
-         total_iterations,
-         start_time,
-         explain,
-         ir,
-         origins
-       ) do
+  defp build_result(%{
+         state: state,
+         schemas: schemas,
+         storage_mod: storage_mod,
+         total_iterations: total_iterations,
+         start_time: start_time,
+         explain: explain,
+         ir: ir,
+         origins: origins,
+         termination: termination
+       }) do
     duration_us = System.monotonic_time(:microsecond) - start_time
 
     relation_sizes =
@@ -235,7 +237,8 @@ defmodule ExDatalog.Engine.Naive do
         iterations: total_iterations,
         duration_us: duration_us,
         relation_sizes: relation_sizes,
-        capabilities: caps
+        capabilities: caps,
+        termination: termination
       },
       provenance: provenance
     }
@@ -333,20 +336,26 @@ defmodule ExDatalog.Engine.Naive do
          base_origins,
          ctx
        ) do
-    Enum.reduce(strata, {state, 0, base_origins}, fn %IR.Stratum{index: stratum_idx},
-                                                     {s, total_iter, origins} ->
+    Enum.reduce(strata, {state, 0, base_origins, :fixpoint}, fn %IR.Stratum{index: stratum_idx},
+                                                                  {s, total_iter, origins, term} ->
       stratum_rules = Enum.filter(rules, fn r -> r.stratum == stratum_idx end)
 
       if stratum_rules == [] do
-        {s, total_iter, origins}
+        {s, total_iter, origins, term}
       else
-        {new_state, iters, new_origins} =
+        {new_state, iters, new_origins, stratum_term} =
           eval_stratum(s, stratum_rules, max_iterations, timeout_ms, storage_mod, origins, ctx)
 
-        {new_state, total_iter + iters, new_origins}
+        worst_term = worst_termination(term, stratum_term)
+        {new_state, total_iter + iters, new_origins, worst_term}
       end
     end)
   end
+
+  defp worst_termination(:fixpoint, other), do: other
+  defp worst_termination(:iteration_limit, _), do: :iteration_limit
+  defp worst_termination(:timeout, :iteration_limit), do: :iteration_limit
+  defp worst_termination(:timeout, _), do: :timeout
 
   defp eval_stratum(
          state,
@@ -376,21 +385,22 @@ defmodule ExDatalog.Engine.Naive do
       deadline: deadline,
       storage_mod: storage_mod,
       origins: origins,
-      constraint_ctx: constraint_ctx
+      constraint_ctx: constraint_ctx,
+      termination: :fixpoint
     }
 
     ctx = fixpoint(ctx)
 
-    {ctx.state, ctx.iteration, ctx.origins}
+    {ctx.state, ctx.iteration, ctx.origins, ctx.termination}
   end
 
   defp fixpoint(%{iteration: iter, max_iterations: max} = ctx) when iter >= max do
-    ctx
+    %{ctx | termination: :iteration_limit}
   end
 
   defp fixpoint(ctx) do
     if System.monotonic_time(:millisecond) > ctx.deadline do
-      ctx
+      %{ctx | termination: :timeout}
     else
       if delta_empty?(ctx.delta, ctx.all_rels) do
         ctx

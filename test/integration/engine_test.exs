@@ -174,7 +174,7 @@ defmodule ExDatalog.IntegrationTest do
   end
 
   describe "end-to-end: Knowledge API" do
-    test "query with goal option" do
+    test "match/3 filters a relation after materialization" do
       result =
         Program.new()
         |> Program.add_relation("edge", [:atom, :atom])
@@ -196,6 +196,59 @@ defmodule ExDatalog.IntegrationTest do
       matched = ExDatalog.Knowledge.match(result, "path", [:a, :_])
       assert MapSet.size(matched) == 1
       assert {:a, :b} in matched
+    end
+
+    test "goal option filters results after materialization" do
+      {:ok, knowledge} =
+        Program.new()
+        |> Program.add_relation("edge", [:atom, :atom])
+        |> Program.add_relation("path", [:atom, :atom])
+        |> Program.add_fact("edge", [:a, :b])
+        |> Program.add_fact("edge", [:b, :c])
+        |> Program.add_rule(
+          Rule.new(
+            Atom.new("path", [Term.var("X"), Term.var("Y")]),
+            [{:positive, Atom.new("edge", [Term.var("X"), Term.var("Y")])}]
+          )
+        )
+        |> ExDatalog.materialize(goal: {"path", [:a, :_]})
+
+      path = ExDatalog.Knowledge.get(knowledge, "path")
+      assert MapSet.size(path) == 1
+      assert {:a, :b} in path
+
+      edge = ExDatalog.Knowledge.get(knowledge, "edge")
+      assert MapSet.size(edge) == 2
+    end
+
+    test "goal option with wildcard matches all in relation" do
+      {:ok, knowledge} =
+        Program.new()
+        |> Program.add_relation("edge", [:atom, :atom])
+        |> Program.add_relation("path", [:atom, :atom])
+        |> Program.add_fact("edge", [:a, :b])
+        |> Program.add_fact("edge", [:b, :c])
+        |> Program.add_rule(
+          Rule.new(
+            Atom.new("path", [Term.var("X"), Term.var("Y")]),
+            [{:positive, Atom.new("edge", [Term.var("X"), Term.var("Y")])}]
+          )
+        )
+        |> ExDatalog.materialize(goal: {"path", [:_, :_]})
+
+      path = ExDatalog.Knowledge.get(knowledge, "path")
+      assert MapSet.size(path) == 2
+    end
+
+    test "goal option without filters returns full knowledge base" do
+      {:ok, knowledge} =
+        Program.new()
+        |> Program.add_relation("edge", [:atom, :atom])
+        |> Program.add_fact("edge", [:a, :b])
+        |> ExDatalog.materialize()
+
+      edge = ExDatalog.Knowledge.get(knowledge, "edge")
+      assert MapSet.size(edge) == 1
     end
   end
 
@@ -462,6 +515,58 @@ defmodule ExDatalog.IntegrationTest do
 
       assert {:error, message} = ExDatalog.evaluate(ir)
       assert message =~ "unstratifiable negation"
+    end
+  end
+
+  describe "end-to-end: termination reason" do
+    test "fixpoint reached returns :fixpoint termination" do
+      {:ok, knowledge} =
+        Program.new()
+        |> Program.add_relation("edge", [:atom, :atom])
+        |> Program.add_relation("path", [:atom, :atom])
+        |> Program.add_fact("edge", [:a, :b])
+        |> Program.add_fact("edge", [:b, :c])
+        |> Program.add_rule(
+          Rule.new(
+            Atom.new("path", [Term.var("X"), Term.var("Y")]),
+            [{:positive, Atom.new("edge", [Term.var("X"), Term.var("Y")])}]
+          )
+        )
+        |> ExDatalog.materialize()
+
+      assert knowledge.stats.termination == :fixpoint
+    end
+
+test "max_iterations hit returns :iteration_limit termination with partial results" do
+      {:ok, knowledge} =
+        Program.new()
+        |> Program.add_relation("parent", [:atom, :atom])
+        |> Program.add_relation("ancestor", [:atom, :atom])
+        |> Program.add_fact("parent", [:a, :b])
+        |> Program.add_fact("parent", [:b, :c])
+        |> Program.add_fact("parent", [:c, :d])
+        |> Program.add_rule(
+          Rule.new(
+            Atom.new("ancestor", [Term.var("X"), Term.var("Y")]),
+            [{:positive, Atom.new("parent", [Term.var("X"), Term.var("Y")])}]
+          )
+        )
+        |> Program.add_rule(
+          Rule.new(
+            Atom.new("ancestor", [Term.var("X"), Term.var("Z")]),
+            [
+              {:positive, Atom.new("parent", [Term.var("X"), Term.var("Y")])},
+              {:positive, Atom.new("ancestor", [Term.var("Y"), Term.var("Z")])}
+            ]
+          )
+        )
+        |> ExDatalog.materialize(max_iterations: 1)
+
+      assert knowledge.stats.termination == :iteration_limit
+      parent = ExDatalog.Knowledge.get(knowledge, "parent")
+      assert MapSet.size(parent) == 3
+      ancestor = ExDatalog.Knowledge.get(knowledge, "ancestor")
+      assert MapSet.size(ancestor) < 6
     end
   end
 

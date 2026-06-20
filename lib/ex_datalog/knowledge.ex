@@ -3,7 +3,7 @@ defmodule ExDatalog.Knowledge do
   The complete knowledge base produced by Datalog evaluation.
 
   Contains the derived fact sets for every relation, along with evaluation
-  statistics (iteration count, duration, relation sizes).
+  statistics (iteration count, duration, relation sizes, termination reason).
 
   The name reflects what this struct *is*: after applying all rules to all
   facts until no new facts can be derived, you have a **knowledge base** —
@@ -14,6 +14,21 @@ defmodule ExDatalog.Knowledge do
   field records which rule derived each fact. Base facts (EDB) are attributed
   as `:base`. This field is `nil` when provenance tracking is disabled,
   ensuring zero overhead for the common case.
+
+  ## Termination
+
+  The `stats.termination` field indicates how evaluation ended:
+
+  - `:fixpoint` — all derivable facts were computed; the knowledge base is
+    complete.
+  - `:iteration_limit` — evaluation stopped because `max_iterations` was
+    reached; the knowledge base may be incomplete.
+  - `:timeout` — evaluation stopped because `timeout_ms` elapsed; the
+    knowledge base may be incomplete.
+
+  Callers **must** check `stats.termination` to distinguish a complete result
+  from a truncated one. Returning `{:ok, knowledge}` does not guarantee the
+  fixpoint was reached.
 
   ## Access functions
 
@@ -28,11 +43,14 @@ defmodule ExDatalog.Knowledge do
           rules: %{non_neg_integer() => ExDatalog.IR.Rule.t()}
         }
 
+  @type termination :: :fixpoint | :iteration_limit | :timeout
+
   @type stats :: %{
           iterations: non_neg_integer(),
           duration_us: non_neg_integer(),
           relation_sizes: %{String.t() => non_neg_integer()},
-          capabilities: ExDatalog.Capabilities.t()
+          capabilities: ExDatalog.Capabilities.t(),
+          termination: termination()
         }
 
   @type t :: %__MODULE__{

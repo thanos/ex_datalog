@@ -55,14 +55,22 @@ defmodule ExDatalog do
 
   ## Options
 
-  `materialize/2` and `evaluate/2` accept:
+`materialize/2` and `evaluate/2` accept:
 
-  - `engine` — backend module (default: `ExDatalog.Engine.Naive`)
-  - `storage` — storage module (default: `ExDatalog.Storage.Map`)
-  - `max_iterations` — fixpoint iteration limit (default: 10_000)
-  - `timeout_ms` — wall-clock timeout in milliseconds (default: 30_000)
-  - `goal` — `{relation_name, pattern}` to filter results (default: `nil`)
-  - `explain` — enable provenance tracking (default: `false`)
+   - `engine` — backend module (default: `ExDatalog.Engine.Naive`)
+   - `storage` — storage module (default: `ExDatalog.Storage.Map`)
+   - `max_iterations` — fixpoint iteration limit (default: 10_000)
+   - `timeout_ms` — wall-clock timeout in milliseconds (default: 30_000)
+   - `goal` — `{relation_name, pattern}` to filter results after evaluation
+     (default: `nil`). Only available via `materialize/2`. See `materialize/2`
+     for details.
+   - `explain` — enable provenance tracking (default: `false`)
+
+  If `max_iterations` or `timeout_ms` is hit, the returned `Knowledge.t()`
+  will have `stats.termination` set to `:iteration_limit` or `:timeout`
+  respectively. A successful fixpoint has `stats.termination == :fixpoint`.
+  Callers **must** check this field to distinguish complete from truncated
+  results.
   """
 
   alias ExDatalog.{Program, Validator}
@@ -164,6 +172,9 @@ defmodule ExDatalog do
   - `:storage` — storage module (default: `ExDatalog.Storage.Map`)
   - `:max_iterations` — fixpoint iteration limit (default: 10_000)
   - `:timeout_ms` — wall-clock timeout in ms (default: 30_000)
+
+  Check `knowledge.stats.termination` for `:fixpoint`, `:iteration_limit`,
+  or `:timeout` to determine whether evaluation completed.
   """
   @spec evaluate(ExDatalog.IR.t(), keyword()) :: {:ok, ExDatalog.Knowledge.t()} | {:error, term()}
   def evaluate(%ExDatalog.IR{} = ir, opts \\ []) do
@@ -180,7 +191,12 @@ defmodule ExDatalog do
 
   ## Options
 
-  See `evaluate/2` for available options.
+  See `evaluate/2` for available options, plus:
+
+  - `:goal` — `{relation, pattern}` to filter results after materialization
+    (default: `nil`). When set, the knowledge base's `relations` map contains
+    only the matching tuples for the specified relation. The pattern uses `:_`
+    as a wildcard, matching `Knowledge.match/3`.
 
   ## Examples
 
@@ -199,11 +215,25 @@ defmodule ExDatalog do
   def materialize(program, opts \\ [])
 
   def materialize(%Program{} = program, opts) do
+    {goal, eval_opts} = Keyword.pop(opts, :goal, nil)
+
     with {:ok, validated} <- validate(program),
-         {:ok, ir} <- ExDatalog.Compiler.compile(validated) do
-      evaluate(ir, opts)
+         {:ok, ir} <- ExDatalog.Compiler.compile(validated),
+         {:ok, knowledge} <- evaluate(ir, eval_opts) do
+      {:ok, apply_goal(knowledge, goal)}
     end
   end
 
   def materialize({:error, _} = error, _opts), do: error
+
+  defp apply_goal(knowledge, nil), do: knowledge
+
+  defp apply_goal(knowledge, {relation, pattern}) do
+    matched = ExDatalog.Knowledge.match(knowledge, relation, pattern)
+
+    %{
+      knowledge
+      | relations: Map.put(knowledge.relations, relation, matched)
+    }
+  end
 end

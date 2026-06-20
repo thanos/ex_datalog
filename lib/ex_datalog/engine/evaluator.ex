@@ -84,7 +84,11 @@ defmodule ExDatalog.Engine.Evaluator do
     existing = Map.get(full, head_relation, MapSet.new())
 
     if k == 0 do
-      derived = eval_fact_rule(rule, full, ctx)
+      derived =
+        [%{}]
+        |> join_positive_body(rule.body, full)
+        |> finish_bindings(rule, full, ctx)
+
       derived |> MapSet.new() |> MapSet.difference(existing) |> MapSet.to_list()
     else
       0..(k - 1)
@@ -122,21 +126,18 @@ defmodule ExDatalog.Engine.Evaluator do
     for {:positive, %IR.Atom{} = atom} <- body, do: atom
   end
 
-  defp eval_fact_rule(rule, full, ctx) do
-    bindings = [%{}]
+  defp join_positive_body(initial_bindings, body, full) do
+    positive_atoms = for {:positive, %IR.Atom{} = atom} <- body, do: atom
 
-    bindings =
-      Enum.reduce(rule.body, bindings, fn
-        {:positive, atom}, acc ->
-          tuples = MapSet.to_list(Map.get(full, atom.relation, MapSet.new()))
-          Join.join(acc, atom.terms, tuples)
+    Enum.reduce(positive_atoms, initial_bindings, fn atom, bindings ->
+      tuples = MapSet.to_list(Map.get(full, atom.relation, MapSet.new()))
+      Join.join(bindings, atom.terms, tuples)
+    end)
+  end
 
-        {:negative, atom}, acc ->
-          Enum.filter(acc, fn b -> check_negative_atom(atom, b, full) end)
-
-        {:constraint, c}, acc ->
-          apply_constraint_to_bindings(c, acc, ctx)
-      end)
+  defp finish_bindings(bindings, rule, full, ctx) do
+    bindings = apply_constraints(rule.body, bindings, ctx)
+    bindings = apply_negation(rule.body, bindings, full)
 
     case bindings do
       [] -> []
@@ -144,22 +145,11 @@ defmodule ExDatalog.Engine.Evaluator do
     end
   end
 
-  defp apply_constraint_to_bindings(constraint, bindings, ctx) do
-    Enum.flat_map(bindings, fn b ->
-      case ConstraintEval.apply_one(constraint, b, ctx) do
-        {:ok, new_b} -> [new_b]
-        :filter -> []
-      end
-    end)
-  end
-
   defp eval_variant(rule, positive_body, full, delta, old, delta_pos, ctx) do
-    bindings = [%{}]
-
     bindings =
       positive_body
       |> Enum.with_index()
-      |> Enum.reduce(bindings, fn {atom, idx}, acc ->
+      |> Enum.reduce([%{}], fn {atom, idx}, acc ->
         relation = atom.relation
 
         tuples =
@@ -177,13 +167,7 @@ defmodule ExDatalog.Engine.Evaluator do
         Join.join(acc, atom.terms, tuples)
       end)
 
-    bindings = apply_constraints(rule.body, bindings, ctx)
-    bindings = apply_negation(rule.body, bindings, full)
-
-    case bindings do
-      [] -> []
-      _ -> Enum.map(bindings, &Join.project(rule.head, &1))
-    end
+    finish_bindings(bindings, rule, full, ctx)
   end
 
   defp eval_variant_if_delta(rule, positive_body, full, delta, old, delta_pos, ctx) do
