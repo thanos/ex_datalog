@@ -657,6 +657,10 @@ defmodule ExDatalog.Schema do
     parse_body_call({:not_, [], [rel_call]})
   end
 
+  defp parse_body_call({:agg, _, args}) when is_list(args) do
+    {:aggregate, %ExDatalog.UnsupportedFeature{feature: :aggregates, planned_for: "v0.6.0"}}
+  end
+
   constraint_ops = [
     :eq,
     :neq,
@@ -689,10 +693,6 @@ defmodule ExDatalog.Schema do
 
   defp parse_body_call({rel_atom, _, nil}) when is_atom(rel_atom) do
     {:positive, %ExDatalog.Atom{relation: Atom.to_string(rel_atom), terms: []}}
-  end
-
-  defp parse_body_call({:agg, _, args}) when is_list(args) do
-    {:aggregate, %ExDatalog.UnsupportedFeature{feature: :aggregates, planned_for: "v0.6.0"}}
   end
 
   defp parse_body_call(other) do
