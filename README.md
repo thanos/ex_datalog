@@ -34,14 +34,16 @@ It continues to influence modern databases, compilers, static analysis tools, kn
 ## Features
 
 - **Builder API** for constructing programs (relations, facts, rules, constraints)
+- **Schema DSL** — Ecto-inspired macros for declaring relations, facts, rules, and queries
 - **Constraint types**: comparisons, arithmetic, type predicates, string predicates, membership
 - **Negation** with stratified evaluation
 - **Recursive rules** with semi-naive fixpoint evaluation
+- **Post-materialization queries** (`query` macro with `find`/`where`)
 - **Pluggable storage backends**: `Storage.Map` (default, on-heap) and `Storage.ETS` (off-heap, concurrent reads)
 - **Provenance / derivation explain** (`explain: true`)
 - **Telemetry** integration (`:telemetry` events for query lifecycle)
 - **Deterministic**: same program + same facts = same result regardless of backend
-- 601 tests, 0 failures, credo clean, dialyzer clean
+- 751 tests, 0 failures, credo clean
 
 ## Installation
 
@@ -50,12 +52,79 @@ Add `ex_datalog` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:ex_datalog, "~> 0.3.0"}
+    {:ex_datalog, "~> 0.4.0"}
   ]
 end
 ```
 
 ## Quick Start
+
+### DSL (Schema macro)
+
+The recommended way to define Datalog programs in v0.4.0+:
+
+```elixir
+defmodule AncestorRules do
+  use ExDatalog.Schema
+
+  relation :parent do
+    field :parent, :atom
+    field :child, :atom
+  end
+
+  relation :ancestor do
+    field :ancestor, :atom
+    field :descendant, :atom
+  end
+
+  fact parent(:alice, :bob)
+  fact parent(:bob, :carol)
+  fact parent(:carol, :dave)
+
+  rule ancestor(X, Y) do
+    parent(X, Y)
+  end
+
+  rule ancestor(X, Z) do
+    parent(X, Y)
+    ancestor(Y, Z)
+  end
+
+  query :descendants_of_alice do
+    find Y
+    where ancestor(:alice, Y)
+  end
+end
+
+{:ok, knowledge} = AncestorRules.materialize()
+AncestorRules.query(:descendants_of_alice, knowledge)
+#=> [:bob, :carol, :dave]
+```
+
+Lowercase variables in rule bodies are logic variables. Constants use
+atom syntax (`:alice`). Use `_` or `wildcard()` for wildcards. Negation
+uses `not_`:
+
+```elixir
+rule bachelor(P) do
+  male(P)
+  not_ married(P, _)
+end
+```
+
+Constraints use named predicates:
+
+```elixir
+rule high_earner(P) do
+  income(P, S)
+  gt(S, 100_000)
+end
+```
+
+The builder API (`Program.add_rule`, `Program.add_fact`, etc.) remains
+fully supported as the lower-level interface.
+
+### Builder API
 
 ### Transitive closure
 
@@ -280,8 +349,11 @@ reference.
 - [What is Datalog?](docs/what-is-datalog.md) — introduction, history, Prolog comparison, industry use cases, LLM integration
 - [Constraints](docs/constraints.md) — constraint types, evaluation, and the dispatch model
 - [Storage Backends](docs/storage_backends.md) — Map vs ETS, options, capabilities, determinism guarantee
-- [Quickstart Tutorial](livebook/quickstart.livemd) — interactive Livebook walkthrough
-- [Examples](livebook/examples.livemd) — 10 realistic use cases (RBAC, supply chain, fraud detection, and more)
+- [Migration: Builder API → DSL](docs/migration_dsl.md) — migrate existing builder-API code to the Schema DSL
+- [DSL Articles](docs/articles/01_why_datalog_on_the_beam.md) — why Datalog on the BEAM, building the DSL, rules as macros, queries, negation
+- [Quickstart Tutorial](livebooks/quickstart.livemd) — interactive Livebook walkthrough
+- [DSL Tutorial](livebooks/ex_datalog_dsl.livemd) — interactive DSL walkthrough
+- [Examples](livebooks/examples.livemd) — 10 realistic use cases (RBAC, supply chain, fraud detection, and more)
 - [API reference](https://hexdocs.pm/ex_datalog) — full module and function documentation
 
 Generate docs locally:
@@ -349,8 +421,8 @@ The following references are highly recommended for understanding both the theor
 | Version | Description |
 |---|---|
 | v0.3.0 | Tuple shorthand for rules (`add_rule/3`, `add_rule/4`), `Term.from/1`, `ExDatalog.Atom.from_tuple/1`, `Constraint.from_tuple/1`; renamed `Result` → `Knowledge`, `query` → `materialize` |
-| v0.4.0 | Sigil DSL (`~d`), aggregation (`count`, `sum`, `min`, `max`), general predicates as deterministic BEAM callbacks |
-| v0.5.0 | Magic sets / demand-driven evaluation, external solver adapter (experimental Z3/Soufflé) |
+| v0.4.0 | Schema DSL (`use ExDatalog.Schema`), `relation`, `fact`, `rule`, `query` macros, `not_` negation, constraint DSL, post-materialization queries, aggregate syntax preview |
+| v0.5.0 | Magic sets / demand-driven evaluation, general predicates as BEAM callbacks |
 | v1.0.0 | Stable public API, hardened production semantics |
 
 ## License

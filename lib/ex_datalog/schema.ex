@@ -4,6 +4,14 @@ defmodule ExDatalog.UnsupportedFeature do
 
   The `feature` field names the unsupported feature.
   The `planned_for` field indicates the target release.
+
+  ## Examples
+
+      iex> uf = %ExDatalog.UnsupportedFeature{feature: :aggregates, planned_for: "v0.6.0"}
+      iex> uf.feature
+      :aggregates
+      iex> uf.planned_for
+      "v0.6.0"
   """
 
   @enforce_keys [:feature, :planned_for]
@@ -170,7 +178,8 @@ defmodule ExDatalog.Schema do
   @doc false
   defmacro __using__(_opts) do
     quote do
-      import ExDatalog.Schema, only: [relation: 2, fact: 1, facts: 2, rule: 2, query: 2]
+      import ExDatalog.Schema,
+        only: [relation: 2, fact: 1, facts: 2, rule: 2, query: 2, wildcard: 0]
 
       Module.register_attribute(__MODULE__, :ex_datalog_relations, accumulate: true)
       Module.register_attribute(__MODULE__, :ex_datalog_facts, accumulate: true)
@@ -188,6 +197,23 @@ defmodule ExDatalog.Schema do
     rules = Module.get_attribute(env.module, :ex_datalog_rules) |> Enum.reverse()
     queries = Module.get_attribute(env.module, :ex_datalog_queries) |> Enum.reverse()
 
+    relation_names = MapSet.new(relations, fn rel -> Atom.to_string(rel.name) end)
+
+    Enum.each(facts, fn {rel_name, _values} ->
+      unless MapSet.member?(relation_names, Atom.to_string(rel_name)) do
+        raise ExDatalog.DSL.CompileError,
+          message:
+            "fact #{rel_name}: relation #{inspect(Atom.to_string(rel_name))} is not declared"
+      end
+    end)
+
+    Enum.each(queries, fn q ->
+      unless MapSet.member?(relation_names, q.relation) do
+        raise ExDatalog.DSL.CompileError,
+          message: "query #{q.name}: relation #{inspect(q.relation)} is not declared"
+      end
+    end)
+
     quote do
       @doc """
       Returns the `ExDatalog.Program` built from this schema's relations,
@@ -195,9 +221,11 @@ defmodule ExDatalog.Schema do
       """
       @spec program() :: ExDatalog.Program.t()
       def program do
-        ExDatalog.Schema.__build_program__(unquote(Macro.escape(relations)),
-                                           unquote(Macro.escape(facts)),
-                                           unquote(Macro.escape(rules)))
+        ExDatalog.Schema.__build_program__(
+          unquote(Macro.escape(relations)),
+          unquote(Macro.escape(facts)),
+          unquote(Macro.escape(rules))
+        )
       end
 
       @doc """
@@ -242,28 +270,90 @@ defmodule ExDatalog.Schema do
 
     program =
       Enum.reduce(facts, program, fn {rel_name, values}, acc ->
-        ExDatalog.Program.add_fact(acc, Atom.to_string(rel_name), values)
+        result = ExDatalog.Program.add_fact(acc, Atom.to_string(rel_name), values)
+
+        case result do
+          {:error, msg} ->
+            raise ExDatalog.DSL.CompileError,
+              message: "fact #{rel_name}(#{Enum.map_join(values, ", ", &inspect/1)}): #{msg}"
+
+          prog ->
+            prog
+        end
       end)
 
-    Enum.reduce(rules, program, fn rule_data, acc ->
-      {{head_rel, head_terms}, body_literals, constraints} = rule_data
+    program =
+      Enum.reduce(rules, program, fn rule_data, acc ->
+        {{head_rel, head_terms}, body_literals, constraints} = rule_data
 
-      head_atom = %ExDatalog.Atom{
-        relation: head_rel,
-        terms: Enum.map(head_terms, &term_from_parsed/1)
-      }
+        head_atom = %ExDatalog.Atom{
+          relation: head_rel,
+          terms: Enum.map(head_terms, &term_from_parsed/1)
+        }
 
-      body =
-        Enum.map(body_literals, fn
-          {:positive, %ExDatalog.Atom{} = atom} ->
-            {:positive, %ExDatalog.Atom{atom | terms: Enum.map(atom.terms, &term_from_parsed/1)}}
+        body =
+          Enum.map(body_literals, fn
+            {:positive, %ExDatalog.Atom{} = atom} ->
+              {:positive,
+               %ExDatalog.Atom{atom | terms: Enum.map(atom.terms, &term_from_parsed/1)}}
 
-          {:negative, %ExDatalog.Atom{} = atom} ->
-            {:negative, %ExDatalog.Atom{atom | terms: Enum.map(atom.terms, &term_from_parsed/1)}}
+            {:negative, %ExDatalog.Atom{} = atom} ->
+              {:negative,
+               %ExDatalog.Atom{atom | terms: Enum.map(atom.terms, &term_from_parsed/1)}}
+          end)
+
+        rule = ExDatalog.Rule.new(head_atom, body, constraints)
+
+        case ExDatalog.Program.add_rule(acc, rule) do
+          {:error, msg} ->
+            raise ExDatalog.DSL.CompileError,
+              message: "rule #{head_rel}/#{length(head_terms)}: #{msg}"
+
+          prog ->
+            prog
+        end
+      end)
+
+    validate_rules!(program, rules)
+    program
+  end
+
+  defp validate_rules!(_program, rules) do
+    Enum.each(rules, fn {{head_rel, head_terms}, body_literals, constraints} ->
+      head_vars =
+        head_terms |> Enum.filter(&match?({:var, _}, &1)) |> Enum.map(fn {:var, n} -> n end)
+
+      positive_vars =
+        body_literals
+        |> Enum.flat_map(fn
+          {:positive, %ExDatalog.Atom{terms: terms}} ->
+            Enum.flat_map(terms, fn
+              {:var, n} -> [n]
+              _ -> []
+            end)
+
+          _ ->
+            []
         end)
 
-      ExDatalog.Program.add_rule(acc, ExDatalog.Rule.new(head_atom, body, constraints))
+      constraint_vars =
+        Enum.flat_map(constraints, fn
+          %ExDatalog.Constraint{result: {:var, n}} -> [n]
+          %ExDatalog.Constraint{} -> []
+          _ -> []
+        end)
+
+      safe_vars = (positive_vars ++ constraint_vars) |> Enum.uniq()
+      unsafe = head_vars -- safe_vars
+
+      if unsafe != [] do
+        raise ExDatalog.DSL.CompileError,
+          message:
+            "rule #{head_rel}/#{length(head_terms)}: variable(s) #{Enum.join(unsafe, ", ")} appear in the rule head but not in any positive body literal"
+      end
     end)
+
+    :ok
   end
 
   defp term_from_parsed({:var, name}), do: ExDatalog.Term.var(name)
@@ -305,8 +395,12 @@ defmodule ExDatalog.Schema do
       end)
 
     case positions do
-      [nil] -> tuple
-      [single_pos] when is_integer(single_pos) -> elem(tuple, single_pos)
+      [nil] ->
+        tuple
+
+      [single_pos] when is_integer(single_pos) ->
+        elem(tuple, single_pos)
+
       _ when is_list(positions) ->
         positions
         |> Enum.filter(&(&1 != nil))
@@ -333,7 +427,11 @@ defmodule ExDatalog.Schema do
   """
   defmacro relation(name, do: block) do
     quote do
-      ExDatalog.Schema.__define_relation__(__MODULE__, unquote(name), unquote(Macro.escape(block)))
+      ExDatalog.Schema.__define_relation__(
+        __MODULE__,
+        unquote(name),
+        unquote(Macro.escape(block))
+      )
     end
   end
 
@@ -378,7 +476,11 @@ defmodule ExDatalog.Schema do
     {rel_name, args} = parse_rel_call(rel_call)
 
     quote do
-      ExDatalog.Schema.__register_fact__(__MODULE__, unquote(rel_name), unquote(Macro.escape(args)))
+      ExDatalog.Schema.__register_fact__(
+        __MODULE__,
+        unquote(rel_name),
+        unquote(Macro.escape(args))
+      )
     end
   end
 
@@ -399,7 +501,11 @@ defmodule ExDatalog.Schema do
     rows = extract_rows(block)
 
     quote do
-      ExDatalog.Schema.__register_facts__(__MODULE__, unquote(rel_name), unquote(Macro.escape(rows)))
+      ExDatalog.Schema.__register_facts__(
+        __MODULE__,
+        unquote(rel_name),
+        unquote(Macro.escape(rows))
+      )
     end
   end
 
@@ -451,7 +557,11 @@ defmodule ExDatalog.Schema do
   """
   defmacro rule(head, do: body) do
     quote do
-      ExDatalog.Schema.__register_rule__(__MODULE__, unquote(Macro.escape(head)), unquote(Macro.escape(body)))
+      ExDatalog.Schema.__register_rule__(
+        __MODULE__,
+        unquote(Macro.escape(head)),
+        unquote(Macro.escape(body))
+      )
     end
   end
 
@@ -475,6 +585,10 @@ defmodule ExDatalog.Schema do
   defp parse_rule_head(_other) do
     raise CompileError,
       description: "rule head must be a relation call like `ancestor(x, y)`"
+  end
+
+  defp parse_term({:wildcard, _, []}) do
+    :wildcard
   end
 
   defp parse_term({var_name, _, nil}) when is_atom(var_name) do
@@ -543,8 +657,24 @@ defmodule ExDatalog.Schema do
     parse_body_call({:not_, [], [rel_call]})
   end
 
-  constraint_ops = [:eq, :neq, :gt, :gte, :lt, :lte, :add, :sub, :mul, :div,
-                     :is_integer, :is_binary, :is_atom, :starts_with, :contains, :member]
+  constraint_ops = [
+    :eq,
+    :neq,
+    :gt,
+    :gte,
+    :lt,
+    :lte,
+    :add,
+    :sub,
+    :mul,
+    :div,
+    :is_integer,
+    :is_binary,
+    :is_atom,
+    :starts_with,
+    :contains,
+    :member
+  ]
 
   Enum.each(constraint_ops, fn op ->
     defp parse_body_call({unquote(op), _, args}) when is_list(args) do
@@ -583,7 +713,9 @@ defmodule ExDatalog.Schema do
 
   Enum.each(constraint_3_arity, fn op ->
     defp build_constraint(unquote(op), [left, right, result]) do
-      ExDatalog.Constraint.from_tuple({unquote(op), parse_term(left), parse_term(right), parse_term(result)})
+      ExDatalog.Constraint.from_tuple(
+        {unquote(op), parse_term(left), parse_term(right), parse_term(result)}
+      )
     end
   end)
 
@@ -695,4 +827,24 @@ defmodule ExDatalog.Schema do
   defp parse_rel_call(rel_atom) when is_atom(rel_atom) do
     {rel_atom, []}
   end
+
+  @doc """
+  Explicit wildcard for use in rule bodies and queries.
+
+  Inside DSL rule and query bodies, `_` is treated as a wildcard.
+  If Elixir's treatment of `_` as a special form causes issues,
+  use `wildcard()` as an explicit alternative.
+
+  ## Examples
+
+      iex> ExDatalog.Schema.wildcard()
+      :wildcard
+
+      rule bachelor(p) do
+        male(p)
+        not_ married(p, wildcard())
+      end
+  """
+  @spec wildcard() :: :wildcard
+  def wildcard, do: :wildcard
 end

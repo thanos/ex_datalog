@@ -323,13 +323,19 @@ defmodule ExDatalog.CompilerTest do
 
       assert {:ok, ir} = Compiler.compile(program)
       values = Enum.map(ir.facts, & &1.values)
-      assert values == [[{:atom, :a}, {:atom, :z}], [{:atom, :m}, {:atom, :m}], [{:atom, :z}, {:atom, :a}]]
+
+      assert values == [
+               [{:atom, :a}, {:atom, :z}],
+               [{:atom, :m}, {:atom, :m}],
+               [{:atom, :z}, {:atom, :a}]
+             ]
     end
   end
 
   describe "compile/1 IR from_term list values" do
     test "IR.from_term converts const list with mixed types" do
-      assert IR.from_term({:const, [1, :a, "hello"]}) == {:const, {:list, [{:int, 1}, {:atom, :a}, {:str, "hello"}]}}
+      assert IR.from_term({:const, [1, :a, "hello"]}) ==
+               {:const, {:list, [{:int, 1}, {:atom, :a}, {:str, "hello"}]}}
     end
 
     test "IR.from_term converts const nested list" do

@@ -1,0 +1,551 @@
+# ExDatalog DSL Tutorial
+
+```elixir
+Mix.install([
+    {:ex_datalog, path: Path.expand("..", __DIR__), env: :prod},
+])
+```
+
+## Section
+
+Welcome to the ExDatalog DSL tutorial! This livebook walks through the `use ExDatalog.Schema` DSL (v0.4.0) for declaring Datalog programs in Elixir.
+
+`
+Mix.install([{:ex_datalog, "~> 0.4.0"}])
+`
+
+## 1. Relations — Declaring Typed Schemas
+
+Relations are the core data declarations in a Datalog program. Each relation defines a named schema with typed fields, similar to database tables.
+
+Supported field types: `:atom`, `:integer`, `:string`, `:any`.
+
+```elixir
+defmodule Family do
+  use ExDatalog.Schema
+
+  relation :parent do
+    field :parent, :atom
+    field :child, :atom
+  end
+
+  relation :ancestor do
+    field :ancestor, :atom
+    field :descendant, :atom
+  end
+
+  relation :income do
+    field :person, :atom
+    field :amount, :integer
+  end
+
+  relation :label do
+    field :node, :atom
+    field :text, :string
+  end
+end
+```
+
+Inspect the program to see the declared relations:
+
+```elixir
+program = Family.program()
+program.relations
+```
+
+You can also mix field types within a single relation. The `:any` type allows unrestricted values:
+
+```elixir
+defmodule VarTypes do
+  use ExDatalog.Schema
+
+  relation :payload do
+    field :key, :atom
+    field :value, :any
+  end
+end
+
+VarTypes.program().relations
+```
+
+## 2. Facts — Single Facts and Bulk Facts
+
+Facts assert ground (variable-free) tuples into relations. You can declare them one at a time with `fact` or in bulk with `facts`.
+
+### Single facts
+
+Use `fact relation_name(const1, const2, ...)` to insert individual tuples. Atom constants start with `:`.
+
+```elixir
+defmodule SingleFacts do
+  use ExDatalog.Schema
+
+  relation :parent do
+    field :parent, :atom
+    field :child, :atom
+  end
+
+  fact parent(:alice, :bob)
+  fact parent(:bob, :carol)
+end
+
+SingleFacts.program().facts
+|> Enum.map(fn {rel, vals} -> {rel, vals} end)
+```
+
+### Bulk facts
+
+When you have many rows, use the `facts` macro with `row` syntax:
+
+```elixir
+defmodule BulkFacts do
+  use ExDatalog.Schema
+
+  relation :edge do
+    field :from, :atom
+    field :to, :atom
+  end
+
+  facts :edge do
+    row :a, :b
+    row :b, :c
+    row :c, :d
+    row :d, :e
+  end
+end
+
+BulkFacts.program().facts
+|> Enum.map(fn {rel, vals} -> {rel, vals} end)
+```
+
+## 3. Recursive Rules — Ancestor Transitive Closure
+
+Rules derive new facts from existing ones. Lowercase identifiers that start with an uppercase letter are **logic variables** (`X`, `Y`, `Z`); atoms starting with `:` are **constants**; `_` is a wildcard.
+
+The classic Datalog example is computing transitive closure — here, the `ancestor` relation from `parent`:
+
+```elixir
+defmodule Ancestor do
+  use ExDatalog.Schema
+
+  relation :parent do
+    field :parent, :atom
+    field :child, :atom
+  end
+
+  relation :ancestor do
+    field :ancestor, :atom
+    field :descendant, :atom
+  end
+
+  fact parent(:alice, :bob)
+  fact parent(:bob, :carol)
+  fact parent(:carol, :dave)
+
+  # Base case: every parent is an ancestor
+  rule ancestor(X, Y) do
+    parent(X, Y)
+  end
+
+  # Recursive case: if X is parent of Y, and Y is ancestor of Z,
+  # then X is ancestor of Z
+  rule ancestor(X, Z) do
+    parent(X, Y)
+    ancestor(Y, Z)
+  end
+end
+
+{:ok, knowledge} = Ancestor.materialize()
+
+ancestor = ExDatalog.Knowledge.get(knowledge, "ancestor")
+MapSet.to_list(ancestor) |> Enum.sort()
+```
+
+The result includes all ancestor pairs — both direct (`alice → bob`) and transitive (`alice → dave`).
+
+## 4. Materialization — Running Programs to Get Knowledge
+
+`materialize/0` (or `materialize/1` with options) validates, compiles, and evaluates the program in one step. It returns `{:ok, knowledge}` on success or `{:error, reason}` on failure.
+
+```elixir
+defmodule Route do
+  use ExDatalog.Schema
+
+  relation :link do
+    field :from, :atom
+    field :to, :atom
+  end
+
+  relation :path do
+    field :from, :atom
+    field :to, :atom
+  end
+
+  facts :link do
+    row :a, :b
+    row :b, :c
+    row :c, :d
+  end
+
+  rule path(X, Y) do
+    link(X, Y)
+  end
+
+  rule path(X, Z) do
+    link(X, Y)
+    path(Y, Z)
+  end
+end
+
+{:ok, knowledge} = Route.materialize()
+```
+
+Check termination status — always verify that the fixpoint was reached:
+
+```elixir
+knowledge.stats.termination
+```
+
+Inspect all derived `path` tuples:
+
+```elixir
+ExDatalog.Knowledge.get(knowledge, "path")
+|> MapSet.to_list()
+|> Enum.sort()
+```
+
+You can also list all relation names and their sizes:
+
+```elixir
+Enum.map(ExDatalog.Knowledge.relations(knowledge), fn rel ->
+  {rel, ExDatalog.Knowledge.size(knowledge, rel)}
+end)
+```
+
+`materialize/1` also accepts options like `:max_iterations` and `:timeout_ms`:
+
+```elixir
+{:ok, knowledge} = Route.materialize(max_iterations: 1000)
+knowledge.stats.termination
+```
+
+## 5. Queries — Named Post-Materialization Queries with find/where
+
+The `query` macro defines named lookups against materialized knowledge. `find` specifies which variables to extract; `where` specifies the relation and pattern to match.
+
+```elixir
+defmodule FamilyQueries do
+  use ExDatalog.Schema
+
+  relation :parent do
+    field :parent, :atom
+    field :child, :atom
+  end
+
+  relation :ancestor do
+    field :ancestor, :atom
+    field :descendant, :atom
+  end
+
+  fact parent(:alice, :bob)
+  fact parent(:bob, :carol)
+  fact parent(:carol, :dave)
+
+  rule ancestor(X, Y) do
+    parent(X, Y)
+  end
+
+  rule ancestor(X, Z) do
+    parent(X, Y)
+    ancestor(Y, Z)
+  end
+
+  query :all_ancestors do
+    find X, Y
+    where ancestor(X, Y)
+  end
+
+  query :descendants_of_alice do
+    find Y
+    where ancestor(:alice, Y)
+  end
+end
+
+{:ok, knowledge} = FamilyQueries.materialize()
+```
+
+Single-column `find` returns a list of values; multi-column `find` returns a list of tuples:
+
+```elixir
+FamilyQueries.query(:descendants_of_alice, knowledge)
+```
+
+```elixir
+FamilyQueries.query(:all_ancestors, knowledge) |> Enum.sort()
+```
+
+Inspect query metadata with `queries/0`:
+
+```elixir
+FamilyQueries.queries()
+```
+
+## 6. Negation — Using not_ in Rule Bodies
+
+Datalog supports **stratified negation** via the `not_` prefix. A negated body literal excludes bindings that match.
+
+For example, find bachelors — people who are male but not married:
+
+```elixir
+defmodule Bachelors do
+  use ExDatalog.Schema
+
+  relation :male do
+    field :person, :atom
+  end
+
+  relation :married do
+    field :person, :atom
+    field :spouse, :atom
+  end
+
+  relation :bachelor do
+    field :person, :atom
+  end
+
+  fact male(:bob)
+  fact male(:tom)
+  fact male(:dave)
+
+  fact married(:tom, :sally)
+  fact married(:dave, :amy)
+
+  rule bachelor(P) do
+    male(P)
+    not_ married(P, _)
+  end
+end
+
+{:ok, knowledge} = Bachelors.materialize()
+
+bachelors = ExDatalog.Knowledge.get(knowledge, "bachelor")
+MapSet.to_list(bachelors)
+```
+
+Only `bob` qualifies — `tom` and `dave` are married. The `_` in `not_ married(P, _)` is a wildcard that matches any spouse.
+
+If Elixir's treatment of `_` causes issues, you can use `wildcard()` explicitly:
+
+```elixir
+# These are equivalent inside a rule body:
+#   not_ married(P, _)
+#   not_ married(P, wildcard())
+```
+
+## 7. Constraints — Comparison, Arithmetic, Type Predicates
+
+Constraints filter or compute values within rule bodies. They are written as named predicates.
+
+### Comparison constraints
+
+Compare bound values: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`.
+
+```elixir
+defmodule HighEarners do
+  use ExDatalog.Schema
+
+  relation :income do
+    field :person, :atom
+    field :salary, :integer
+  end
+
+  relation :high_earner do
+    field :person, :atom
+  end
+
+  fact income(:alice, 150_000)
+  fact income(:bob, 50_000)
+  fact income(:carol, 200_000)
+  fact income(:dave, 100_000)
+
+  rule high_earner(P) do
+    income(P, S)
+    gt(S, 100_000)
+  end
+end
+
+{:ok, knowledge} = HighEarners.materialize()
+ExDatalog.Knowledge.get(knowledge, "high_earner") |> MapSet.to_list()
+```
+
+### Arithmetic constraints
+
+Compute new values: `add`, `sub`, `mul`, `div`. The third argument is a result variable that receives the computed value.
+
+```elixir
+defmodule Compensation do
+  use ExDatalog.Schema
+
+  relation :salary do
+    field :person, :atom
+    field :base, :integer
+  end
+
+  relation :total_comp do
+    field :person, :atom
+    field :total, :integer
+  end
+
+  fact salary(:alice, 100)
+  fact salary(:bob, 80)
+
+  rule total_comp(P, T) do
+    salary(P, B)
+    add(B, 20, T)
+  end
+end
+
+{:ok, knowledge} = Compensation.materialize()
+ExDatalog.Knowledge.get(knowledge, "total_comp") |> MapSet.to_list() |> Enum.sort()
+```
+
+### Type predicates
+
+Check value types: `is_integer`, `is_binary`, `is_atom`.
+
+```elixir
+defmodule TypeFilter do
+  use ExDatalog.Schema
+
+  relation :value do
+    field :v, :any
+  end
+
+  relation :int_val do
+    field :v, :any
+  end
+
+  fact value(42)
+  fact value(:not_int)
+
+  rule int_val(V) do
+    value(V)
+    is_integer(V)
+  end
+end
+
+{:ok, knowledge} = TypeFilter.materialize()
+ExDatalog.Knowledge.get(knowledge, "int_val") |> MapSet.to_list()
+```
+
+### Equality and inequality
+
+```elixir
+defmodule EqualityDemo do
+  use ExDatalog.Schema
+
+  relation :pair do
+    field :a, :atom
+    field :b, :atom
+  end
+
+  relation :same do
+    field :x, :atom
+  end
+
+  relation :different do
+    field :a, :atom
+    field :b, :atom
+  end
+
+  fact pair(:x, :x)
+  fact pair(:a, :b)
+  fact pair(:b, :a)
+
+  rule same(A) do
+    pair(A, B)
+    eq(A, B)
+  end
+
+  rule different(A, B) do
+    pair(A, B)
+    neq(A, B)
+  end
+end
+
+{:ok, knowledge} = EqualityDemo.materialize()
+IO.puts("Same:  #{inspect(MapSet.to_list(ExDatalog.Knowledge.get(knowledge, "same")))}")
+IO.puts("Different: #{inspect(MapSet.to_list(ExDatalog.Knowledge.get(knowledge, "different")))}")
+```
+
+### String and membership constraints
+
+* `starts_with(var, "prefix")` — filters strings that start with a prefix
+* `contains(var, "substring")` — filters strings that contain a substring
+* `member(var, [:a, :b, :c])` — filters values in a constant list
+
+### Full constraint reference
+
+| Category   | Operators                             |
+| ---------- | ------------------------------------- |
+| Comparison | `eq`, `neq`, `gt`, `gte`, `lt`, `lte` |
+| Arithmetic | `add`, `sub`, `mul`, `div`            |
+| Type       | `is_integer`, `is_binary`, `is_atom`  |
+| String     | `starts_with`, `contains`             |
+| Membership | `member`                              |
+
+## 8. Aggregate Syntax Preview — Parsed but Not Executable
+
+Aggregates have a **parsed syntax** but are **not yet executable**. Writing a rule with `agg(:function, variable)` triggers parsing, but materialization returns an error:
+
+```elixir
+defmodule AggPreview do
+  use ExDatalog.Schema
+
+  relation :employee do
+    field :emp, :atom
+    field :dept, :atom
+  end
+
+  relation :employee_count do
+    field :dept, :atom
+    field :total, :any
+  end
+
+  facts :employee do
+    row :alice, :engineering
+    row :bob, :engineering
+    row :carol, :infra
+  end
+
+  # This rule parses but cannot be materialized yet.
+  # The agg/2 syntax is reserved for a future release (v0.6.0).
+  #
+  # rule employee_count(D, agg(:count, E)) do
+  #   employee(E, D)
+  # end
+end
+```
+
+Attempting to materialize a program containing aggregates will return:
+
+```elixir
+# {:error, %ExDatalog.UnsupportedFeature{feature: :aggregates, planned_for: "v0.6.0"}}
+```
+
+The `UnsupportedFeature` struct can be inspected directly:
+
+```elixir
+%ExDatalog.UnsupportedFeature{feature: :aggregates, planned_for: "v0.6.0"}
+|> IO.inspect()
+```
+
+When aggregates land in a future release, the syntax will look like:
+
+```elixir
+# rule employee_count(D, agg(:count, E)) do
+#   employee(E, D)
+# end
+```
+
+Until then, you can compute aggregations in Elixir by querying materialized knowledge and post-processing the results.

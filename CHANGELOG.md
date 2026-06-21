@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.4.0 (2026-06-20)
+
+### Added
+- `ExDatalog.Schema` — Ecto-inspired DSL macro module for defining Datalog programs
+  - `relation/2` macro declares typed relation schemas
+  - `fact/1` and `facts/2` macros declare ground facts
+  - `rule/2` macro declares rules with lowercase logic variables, `not_` for negation, named constraint predicates (`gt`, `eq`, `add`, etc.)
+  - `query/2` macro declares named post-materialization queries with `find`/`where`
+  - `wildcard/0` helper for explicit wildcards in rule bodies
+  - Generated `program/0`, `materialize/0,1`, `queries/0`, `query/2` functions
+- `ExDatalog.UnsupportedFeature` struct for forward-compatible aggregate syntax parsing
+- `ExDatalog.DSL.CompileError` exception for readable DSL macro errors
+- 33 integration tests for the DSL (relations, facts, rules, negation, constraints, queries, backward compatibility)
+- Livebook tutorial: `livebooks/ex_datalog_dsl.livemd`
+- Educational articles in `docs/articles/`
+
+### Changed
+- Version bumped from 0.3.0 to 0.4.0
+- DSL is the recommended authoring layer; builder API remains the stable lower-level API
+- README updated with DSL quickstart
+
+### Notes
+- Query DSL operates on materialized knowledge only (no query planner yet)
+- Aggregate syntax is parsed but not yet executable — returns `%UnsupportedFeature{feature: :aggregates}`
+- All 718 existing tests continue to pass (now 751 total)
+
 ## [0.3.0] - 2025-06-19
 
 ### Added
