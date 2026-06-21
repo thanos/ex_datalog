@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.4.1 (2026-06-21)
+
+### Fixed
+
+- **C1**: Corrected moduledoc and `rule/2` docstring to state that **uppercase** identifiers are logic variables (was incorrectly documented as lowercase). Updated moduledoc examples, `rule/2` docstring, README, and article 01 to use uppercase variables consistently.
+- **C2**: Aggregate syntax (`agg(...)`) now raises `ExDatalog.DSL.CompileError` with a clear message in both head and body positions, instead of crashing with `CompileError` or `FunctionClauseError`. Updated CHANGELOG, article 05, and moduledoc to reflect reality.
+- **H1**: Replaced meaningless aggregate struct-literal tests with real end-to-end compile-time tests that exercise `agg(...)` DSL syntax in both head and body positions.
+- **H2**: Query without a `where` clause now raises `ExDatalog.DSL.CompileError` with a readable message instead of an opaque `Protocol.UndefinedError`.
+- **M1**: Query `find` variables that are not present in the `where` pattern now raise `ExDatalog.DSL.CompileError` at compile time instead of silently returning wrong results.
+- **M2**: Unrecognized expressions inside `relation` and `facts` blocks now raise `ExDatalog.DSL.CompileError` instead of being silently dropped.
+- **L1**: All DSL authoring errors now raise `ExDatalog.DSL.CompileError` (was a mix of `CompileError` and `ArgumentError`).
+- **L2**: README test count updated to 792 (was stale at 751, then 786).
+- **L3**: Dropped unused `_program` parameter from `validate_rules!/1`.
+- **L4**: Removed duplicate `eq` constraint test from `SchemaCoverageTest`.
+- **L5**: Fixed moduledoc reference from `materialize/0` to `materialize/0,1`.
+- **L6**: Deleted `livebooks/examples.md` (521-line unreferenced LLM-generated artifact).
+
+### Changed
+
+- Version bumped from 0.4.0 to 0.4.1
+- All DSL error messages now go through `ExDatalog.DSL.CompileError` for uniform catch/rescue
+- `ExDatalog.UnsupportedFeature` struct retained for future use but no longer produced at runtime
+
 ## v0.4.0 (2026-06-20)
 
 ### Added

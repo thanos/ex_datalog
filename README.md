@@ -43,7 +43,7 @@ It continues to influence modern databases, compilers, static analysis tools, kn
 - **Provenance / derivation explain** (`explain: true`)
 - **Telemetry** integration (`:telemetry` events for query lifecycle)
 - **Deterministic**: same program + same facts = same result regardless of backend
-- 786 tests, 0 failures, credo clean
+- 792 tests, 0 failures, credo clean
 
 ## Installation
 
@@ -52,7 +52,7 @@ Add `ex_datalog` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:ex_datalog, "~> 0.4.0"}
+    {:ex_datalog, "~> 0.4.1"}
   ]
 end
 ```
@@ -421,7 +421,8 @@ The following references are highly recommended for understanding both the theor
 | Version | Description |
 |---|---|
 | v0.3.0 | Tuple shorthand for rules (`add_rule/3`, `add_rule/4`), `Term.from/1`, `ExDatalog.Atom.from_tuple/1`, `Constraint.from_tuple/1`; renamed `Result` → `Knowledge`, `query` → `materialize` |
-| v0.4.0 | Schema DSL (`use ExDatalog.Schema`), `relation`, `fact`, `rule`, `query` macros, `not_` negation, constraint DSL, post-materialization queries, aggregate syntax preview |
+| v0.4.0 | Schema DSL (`use ExDatalog.Schema`), `relation`, `fact`, `rule`, `query` macros, `not_` negation, constraint DSL, post-materialization queries |
+| v0.4.1 | DSL review fixes: correct uppercase-variable docs, clean aggregate error, query/find validation, unified `DSL.CompileError`, 792 tests |
 | v0.5.0 | Magic sets / demand-driven evaluation, general predicates as BEAM callbacks |
 | v1.0.0 | Stable public API, hardened production semantics |
 
