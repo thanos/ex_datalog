@@ -127,7 +127,7 @@ This is the range-restriction property: every head variable must be bound by a p
 
 ## What's Coming in v0.5.0
 
-- **Aggregates** — the syntax `agg(:count, X)` is already parsed but returns `%UnsupportedFeature{feature: :aggregates}`. The implementation will add count, sum, min, and max with proper safety checks.
+- **Aggregates** — the syntax `agg(:count, X)` is not yet supported. Using it raises `ExDatalog.DSL.CompileError` at compile time. The implementation will add count, sum, min, and max with proper safety checks.
 - **Magic sets / demand-driven evaluation** — goal-directed evaluation that computes only facts relevant to a specific query, instead of the full fixpoint.
 - **General predicates as BEAM callbacks** — arbitrary Elixir functions as predicates, extending Datalog's reasoning with Elixir's computation while maintaining stratification and safety.
 

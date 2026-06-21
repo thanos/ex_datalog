@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ExDatalog.Schema` — Ecto-inspired DSL macro module for defining Datalog programs
   - `relation/2` macro declares typed relation schemas
   - `fact/1` and `facts/2` macros declare ground facts
-  - `rule/2` macro declares rules with lowercase logic variables, `not_` for negation, named constraint predicates (`gt`, `eq`, `add`, etc.)
+  - `rule/2` macro declares rules with uppercase logic variables, `not_` for negation, named constraint predicates (`gt`, `eq`, `add`, etc.)
   - `query/2` macro declares named post-materialization queries with `find`/`where`
   - `wildcard/0` helper for explicit wildcards in rule bodies
   - Generated `program/0`, `materialize/0,1`, `queries/0`, `query/2` functions
@@ -28,8 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Notes
 - Query DSL operates on materialized knowledge only (no query planner yet)
-- Aggregate syntax is parsed but not yet executable — returns `%UnsupportedFeature{feature: :aggregates}`
-- All 718 existing tests continue to pass (now 751 total)
+- Aggregate syntax is not yet supported — using `agg(...)` raises `ExDatalog.DSL.CompileError` at compile time
+- All 718 existing tests continue to pass (now 786 total)
 
 ## [0.3.0] - 2025-06-19
 

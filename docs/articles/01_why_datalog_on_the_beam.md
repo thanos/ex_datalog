@@ -11,9 +11,9 @@ This isn't just a philosophical alignment. ExDatalog's `Knowledge` struct holds 
 Pattern matching is the other shared primitive. In Datalog, a rule body like:
 
 ```elixir
-rule ancestor(x, z) do
-  parent(x, y)
-  ancestor(y, z)
+rule ancestor(X, Z) do
+  parent(X, Y)
+  ancestor(Y, Z)
 end
 ```
 
@@ -57,13 +57,13 @@ defmodule AncestorRules do
     field :child, :atom
   end
 
-  rule ancestor(x, y) do
-    parent(x, y)
+  rule ancestor(X, Y) do
+    parent(X, Y)
   end
 
-  rule ancestor(x, z) do
-    parent(x, y)
-    ancestor(y, z)
+  rule ancestor(X, Z) do
+    parent(X, Y)
+    ancestor(Y, Z)
   end
 end
 ```

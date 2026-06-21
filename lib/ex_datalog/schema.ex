@@ -25,7 +25,7 @@ defmodule ExDatalog.Schema do
   An Ecto-inspired DSL for defining Datalog programs.
 
   `use ExDatalog.Schema` in a module to declare relations, facts, rules,
-  and queries. The module then exposes `program/0`, `materialize/0`,
+  and queries. The module then exposes `program/0`, `materialize/0,1`,
   and `query/2` functions.
 
   ## Example
@@ -46,18 +46,18 @@ defmodule ExDatalog.Schema do
         fact parent(:alice, :bob)
         fact parent(:bob, :carol)
 
-        rule ancestor(x, y) do
-          parent(x, y)
+        rule ancestor(X, Y) do
+          parent(X, Y)
         end
 
-        rule ancestor(x, z) do
-          parent(x, y)
-          ancestor(y, z)
+        rule ancestor(X, Z) do
+          parent(X, Y)
+          ancestor(Y, Z)
         end
 
         query :descendants_of_alice do
-          find y
-          where ancestor(:alice, y)
+          find Y
+          where ancestor(:alice, Y)
         end
       end
 
@@ -91,11 +91,11 @@ defmodule ExDatalog.Schema do
 
   ## Rule DSL
 
-  Rules derive new facts. Lowercase identifiers are logic variables,
-  atoms starting with `:` are constants, and `_` is a wildcard:
+  Rules derive new facts. Uppercase identifiers are logic variables,
+  lowercase atoms and `:atoms` are constants, and `_` is a wildcard:
 
-      rule ancestor(x, y) do
-        parent(x, y)
+      rule ancestor(X, Y) do
+        parent(X, Y)
       end
 
   Negation uses `not_`:
@@ -107,9 +107,9 @@ defmodule ExDatalog.Schema do
 
   Constraints use named predicates:
 
-      rule high_earner(p) do
-        income(p, salary)
-        gt(salary, 100_000)
+      rule high_earner(P) do
+        income(P, S)
+        gt(S, 100_000)
       end
 
   Supported constraints: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`,
@@ -121,8 +121,8 @@ defmodule ExDatalog.Schema do
   Queries define named post-materialization lookups:
 
       query :all_ancestors do
-        find x, y
-        where ancestor(x, y)
+        find X, Y
+        where ancestor(X, Y)
       end
 
   Queries operate on materialized knowledge and use `Knowledge.match/3`
@@ -130,14 +130,13 @@ defmodule ExDatalog.Schema do
 
   ## Aggregate Syntax (Preview)
 
-  Aggregates are parsed but not yet executable:
+  Aggregates are not yet supported. Using `agg(...)` in a rule head or
+  body raises `ExDatalog.DSL.CompileError` at compile time:
 
       rule employee_count(dept, agg(:count, emp)) do
         employee(emp, dept)
       end
-
-  Attempting to materialize a program with aggregates returns
-  `{:error, %ExDatalog.UnsupportedFeature{feature: :aggregates}}`.
+      #=> ** (ExDatalog.DSL.CompileError) aggregates are not yet supported (planned for v0.6.0)
 
   ## Backward Compatibility
 
@@ -314,11 +313,11 @@ defmodule ExDatalog.Schema do
         end
       end)
 
-    validate_rules!(program, rules)
+    validate_rules!(rules)
     program
   end
 
-  defp validate_rules!(_program, rules) do
+  defp validate_rules!(rules) do
     Enum.each(rules, fn {{head_rel, head_terms}, body_literals, constraints} ->
       head_vars =
         head_terms |> Enum.filter(&match?({:var, _}, &1)) |> Enum.map(fn {:var, n} -> n end)
@@ -461,7 +460,10 @@ defmodule ExDatalog.Schema do
     [%ExDatalog.Schema.Field{name: name, type: type}]
   end
 
-  defp extract_field(_), do: []
+  defp extract_field(other) do
+    raise ExDatalog.DSL.CompileError,
+      message: "unrecognized expression in relation block: #{inspect(other)}"
+  end
 
   # --- Fact macros ---
 
@@ -524,35 +526,42 @@ defmodule ExDatalog.Schema do
     [args]
   end
 
-  defp extract_rows(_), do: []
+  defp extract_rows(other) do
+    raise ExDatalog.DSL.CompileError,
+      message: "unrecognized expression in facts block: #{inspect(other)}"
+  end
 
   defp extract_row({:row, _, args}), do: [args]
-  defp extract_row(_), do: []
+
+  defp extract_row(other) do
+    raise ExDatalog.DSL.CompileError,
+      message: "unrecognized expression in facts block: #{inspect(other)}"
+  end
 
   # --- Rule macro ---
 
   @doc """
   Declares a Datalog rule.
 
-  Lowercase identifiers in the head and body are logic variables.
-  Atoms starting with `:` are constants. `_` is a wildcard.
+  Uppercase identifiers in the head and body are logic variables.
+  Lowercase atoms and `:atoms` are constants. `_` is a wildcard.
 
-      rule ancestor(x, y) do
-        parent(x, y)
+      rule ancestor(X, Y) do
+        parent(X, Y)
       end
 
   Negation uses `not_`:
 
-      rule bachelor(p) do
-        male(p)
-        not_ married(p, _)
+      rule bachelor(P) do
+        male(P)
+        not_ married(P, _)
       end
 
   Constraints use named predicates:
 
-      rule high_earner(p) do
-        income(p, salary)
-        gt(salary, 100_000)
+      rule high_earner(P) do
+        income(P, S)
+        gt(S, 100_000)
       end
   """
   defmacro rule(head, do: body) do
@@ -583,8 +592,8 @@ defmodule ExDatalog.Schema do
   end
 
   defp parse_rule_head(_other) do
-    raise CompileError,
-      description: "rule head must be a relation call like `ancestor(x, y)`"
+    raise ExDatalog.DSL.CompileError,
+      message: "rule head must be a relation call like `ancestor(X, Y)`"
   end
 
   defp parse_term({:wildcard, _, []}) do
@@ -612,9 +621,14 @@ defmodule ExDatalog.Schema do
   defp parse_term(integer) when is_integer(integer), do: {:const, integer}
   defp parse_term(string) when is_binary(string), do: {:const, string}
 
+  defp parse_term({:agg, _, _args}) do
+    raise ExDatalog.DSL.CompileError,
+      message: "aggregates are not yet supported (planned for v0.6.0)"
+  end
+
   defp parse_term(other) do
-    raise CompileError,
-      description: "unsupported term in DSL: #{inspect(other)}"
+    raise ExDatalog.DSL.CompileError,
+      message: "unsupported term in DSL: #{inspect(other)}"
   end
 
   defp create_term(name) when is_binary(name) do
@@ -637,9 +651,6 @@ defmodule ExDatalog.Schema do
 
       {:constraint, c}, {body, constraints} ->
         {body, constraints ++ [c]}
-
-      {:aggregate, agg}, {body, constraints} ->
-        {body, constraints ++ [agg]}
     end)
   end
 
@@ -657,8 +668,9 @@ defmodule ExDatalog.Schema do
     parse_body_call({:not_, [], [rel_call]})
   end
 
-  defp parse_body_call({:agg, _, args}) when is_list(args) do
-    {:aggregate, %ExDatalog.UnsupportedFeature{feature: :aggregates, planned_for: "v0.6.0"}}
+  defp parse_body_call({:agg, _, _args}) do
+    raise ExDatalog.DSL.CompileError,
+      message: "aggregates are not yet supported (planned for v0.6.0)"
   end
 
   constraint_ops = [
@@ -696,8 +708,8 @@ defmodule ExDatalog.Schema do
   end
 
   defp parse_body_call(other) do
-    raise CompileError,
-      description: "unsupported body expression in rule: #{inspect(other)}"
+    raise ExDatalog.DSL.CompileError,
+      message: "unsupported body expression in rule: #{inspect(other)}"
   end
 
   constraint_2_arity = [:eq, :neq, :gt, :gte, :lt, :lte, :starts_with, :contains]
@@ -734,8 +746,8 @@ defmodule ExDatalog.Schema do
   end)
 
   defp build_constraint(op, args) do
-    raise CompileError,
-      description: "unsupported constraint #{op}/#{length(args)}: #{inspect(args)}"
+    raise ExDatalog.DSL.CompileError,
+      message: "unsupported constraint #{op}/#{length(args)}: #{inspect(args)}"
   end
 
   # --- Query macro ---
@@ -760,6 +772,20 @@ defmodule ExDatalog.Schema do
   @doc false
   def __register_query__(module, name, block) do
     {find_vars, relation, pattern} = parse_query_block(block)
+
+    where_vars =
+      pattern
+      |> Enum.filter(&match?({:var, _}, &1))
+      |> Enum.map(fn {:var, n} -> n end)
+      |> MapSet.new()
+
+    missing = MapSet.difference(MapSet.new(find_vars), where_vars)
+
+    if MapSet.size(missing) > 0 do
+      raise ExDatalog.DSL.CompileError,
+        message:
+          "query #{name}: find variable(s) #{Enum.join(MapSet.to_list(missing), ", ")} not present in where pattern"
+    end
 
     Module.put_attribute(module, :ex_datalog_queries, %ExDatalog.Schema.QueryMeta{
       name: name,
@@ -787,8 +813,9 @@ defmodule ExDatalog.Schema do
     end)
   end
 
-  defp parse_query_block({:find, _, [find_var]}) do
-    parse_query_block({:__block__, [], [{:find, [], [find_var]}, {:where, [], [{:_, [], nil}]}]})
+  defp parse_query_block({:find, _, [_find_var]}) do
+    raise ExDatalog.DSL.CompileError,
+      message: "query requires a `where` clause (e.g., `where relation(X, Y)`)"
   end
 
   defp parse_query_term({:__aliases__, _, [alias_name]} = _var) when is_atom(alias_name) do
@@ -840,9 +867,9 @@ defmodule ExDatalog.Schema do
       iex> ExDatalog.Schema.wildcard()
       :wildcard
 
-      rule bachelor(p) do
-        male(p)
-        not_ married(p, wildcard())
+      rule bachelor(P) do
+        male(P)
+        not_ married(P, _)
       end
   """
   @spec wildcard() :: :wildcard
