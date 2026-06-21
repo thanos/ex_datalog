@@ -43,7 +43,7 @@ It continues to influence modern databases, compilers, static analysis tools, kn
 - **Provenance / derivation explain** (`explain: true`)
 - **Telemetry** integration (`:telemetry` events for query lifecycle)
 - **Deterministic**: same program + same facts = same result regardless of backend
-- 751 tests, 0 failures, credo clean
+- 786 tests, 0 failures, credo clean
 
 ## Installation
 
@@ -101,7 +101,7 @@ AncestorRules.query(:descendants_of_alice, knowledge)
 #=> [:bob, :carol, :dave]
 ```
 
-Lowercase variables in rule bodies are logic variables. Constants use
+Uppercase identifiers in rule bodies are logic variables. Constants use
 atom syntax (`:alice`). Use `_` or `wildcard()` for wildcards. Negation
 uses `not_`:
 

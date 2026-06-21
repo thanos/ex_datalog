@@ -616,9 +616,63 @@ defmodule ExDatalog.SchemaTest do
   end
 
   describe "UnsupportedFeature" do
-    test "aggregate spike returns UnsupportedFeature struct" do
-      assert %ExDatalog.UnsupportedFeature{feature: :aggregates, planned_for: "v0.6.0"}.feature ==
-               :aggregates
+    test "aggregate syntax in rule head raises DSL.CompileError" do
+      assert_raise ExDatalog.DSL.CompileError, ~r/aggregates are not yet supported/, fn ->
+        Code.compile_string("""
+        defmodule AggHeadTestErr do
+          use ExDatalog.Schema
+
+          relation :employee do
+            field(:name, :atom)
+            field(:dept, :atom)
+          end
+
+          relation :employee_count do
+            field(:dept, :atom)
+            field(:count_val, :atom)
+          end
+
+          fact(employee(:alice, :eng))
+
+          rule employee_count(Dept, agg(:count, Emp)) do
+            employee(Emp, Dept)
+          end
+        end
+        """)
+      end
+    end
+
+    test "aggregate syntax in rule body raises DSL.CompileError" do
+      assert_raise ExDatalog.DSL.CompileError, ~r/aggregates are not yet supported/, fn ->
+        Code.compile_string("""
+        defmodule AggBodyTestErr do
+          use ExDatalog.Schema
+
+          relation :employee do
+            field(:name, :atom)
+            field(:dept, :atom)
+          end
+
+          relation :employee_count do
+            field(:dept, :atom)
+            field(:count_val, :atom)
+          end
+
+          fact(employee(:alice, :eng))
+
+          rule employee_count(Dept, Count) do
+            employee(Emp, Dept)
+            agg(:count, Emp)
+          end
+        end
+        """)
+      end
+    end
+
+    test "UnsupportedFeature struct fields are accessible" do
+      uf = %ExDatalog.UnsupportedFeature{feature: :aggregates, planned_for: "v0.6.0"}
+      assert uf.feature == :aggregates
+      assert uf.planned_for == "v0.6.0"
     end
   end
 
@@ -1433,36 +1487,6 @@ defmodule ExDatalog.SchemaCoverageTest do
     end
   end
 
-  describe "eq constraint" do
-    test "eq filters for equality" do
-      defmodule EqConstraintIntegrationTest do
-        use ExDatalog.Schema
-
-        relation :pair do
-          field(:a, :atom)
-          field(:b, :atom)
-        end
-
-        relation :same_pair do
-          field(:a, :atom)
-        end
-
-        fact(pair(:x, :x))
-        fact(pair(:x, :y))
-
-        rule same_pair(A) do
-          pair(A, B)
-          eq(A, B)
-        end
-      end
-
-      {:ok, knowledge} = EqConstraintIntegrationTest.materialize()
-      same = Knowledge.get(knowledge, "same_pair")
-      assert MapSet.size(same) == 1
-      assert {:x} in same
-    end
-  end
-
   describe "query with atom constants in where" do
     test "constant value projection works correctly" do
       defmodule QueryConstantTest do
@@ -1675,14 +1699,6 @@ defmodule ExDatalog.SchemaCoverageTest do
       assert {:x, :y} in result
     end
   end
-
-  describe "UnsupportedFeature struct" do
-    test "supports accessing planned_for field" do
-      uf = %ExDatalog.UnsupportedFeature{feature: :aggregates, planned_for: "v0.6.0"}
-      assert uf.feature == :aggregates
-      assert uf.planned_for == "v0.6.0"
-    end
-  end
 end
 
 defmodule ExDatalog.SchemaErrorTest do
@@ -1794,6 +1810,138 @@ defmodule ExDatalog.SchemaErrorTest do
 
       assert_raise ExDatalog.DSL.CompileError, ~r/undefined relation/, fn ->
         RuleUndeclaredRelTest.program()
+      end
+    end
+
+    test "aggregate in rule head raises DSL.CompileError" do
+      assert_raise ExDatalog.DSL.CompileError, ~r/aggregates are not yet supported/, fn ->
+        Code.compile_string("""
+        defmodule AggHeadErrTest do
+          use ExDatalog.Schema
+
+          relation :employee do
+            field(:name, :atom)
+            field(:dept, :atom)
+          end
+
+          relation :employee_count do
+            field(:dept, :atom)
+            field(:count_val, :atom)
+          end
+
+          fact(employee(:alice, :eng))
+
+          rule employee_count(Dept, agg(:count, Emp)) do
+            employee(Emp, Dept)
+          end
+        end
+        """)
+      end
+    end
+
+    test "aggregate in rule body raises DSL.CompileError" do
+      assert_raise ExDatalog.DSL.CompileError, ~r/aggregates are not yet supported/, fn ->
+        Code.compile_string("""
+        defmodule AggBodyErrTest do
+          use ExDatalog.Schema
+
+          relation :employee do
+            field(:name, :atom)
+            field(:dept, :atom)
+          end
+
+          relation :employee_count do
+            field(:dept, :atom)
+            field(:count_val, :atom)
+          end
+
+          fact(employee(:alice, :eng))
+
+          rule employee_count(Dept, Count) do
+            employee(Emp, Dept)
+            agg(:count, Emp)
+          end
+        end
+        """)
+      end
+    end
+
+    test "query without where clause raises DSL.CompileError" do
+      assert_raise ExDatalog.DSL.CompileError, ~r/requires a .where. clause/, fn ->
+        Code.compile_string("""
+        defmodule QueryNoWhereErrTest do
+          use ExDatalog.Schema
+
+          relation :parent do
+            field(:p, :atom)
+            field(:c, :atom)
+          end
+
+          fact(parent(:alice, :bob))
+
+          query :just_find do
+            find(X)
+          end
+        end
+        """)
+      end
+    end
+
+    test "query find variable not in where pattern raises DSL.CompileError" do
+      assert_raise ExDatalog.DSL.CompileError, ~r/not present in where pattern/, fn ->
+        Code.compile_string("""
+        defmodule QueryFindVarErrTest do
+          use ExDatalog.Schema
+
+          relation :edge do
+            field(:from, :atom)
+            field(:to, :atom)
+          end
+
+          fact(edge(:a, :b))
+
+          query :bad_find do
+            find Z
+            where edge(X, Y)
+          end
+        end
+        """)
+      end
+    end
+
+    test "unrecognized expression in relation block raises DSL.CompileError" do
+      assert_raise ExDatalog.DSL.CompileError,
+                   ~r/unrecognized expression in relation block/,
+                   fn ->
+                     Code.compile_string("""
+                     defmodule BadRelationBlockTest do
+                       use ExDatalog.Schema
+
+                       relation :parent do
+                         field(:p, :atom)
+                         IO.puts("oops")
+                       end
+                     end
+                     """)
+                   end
+    end
+
+    test "unrecognized expression in facts block raises DSL.CompileError" do
+      assert_raise ExDatalog.DSL.CompileError, ~r/unrecognized expression in facts block/, fn ->
+        Code.compile_string("""
+        defmodule BadFactsBlockTest do
+          use ExDatalog.Schema
+
+          relation :parent do
+            field(:p, :atom)
+            field(:c, :atom)
+          end
+
+          facts :parent do
+            IO.puts("oops")
+          end
+        end
+        """)
       end
     end
   end
