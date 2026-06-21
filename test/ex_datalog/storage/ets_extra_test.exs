@@ -12,7 +12,10 @@ defmodule ExDatalog.Storage.ETSConformanceExtraTest do
   describe "build_index/3 and get_indexed/4" do
     test "builds single-column index and retrieves matching tuples" do
       state = ETS.init(@schemas)
-      state = ETS.insert_many(state, "parent", [{:alice, :bob}, {:carol, :dave}, {:alice, :carol}])
+
+      state =
+        ETS.insert_many(state, "parent", [{:alice, :bob}, {:carol, :dave}, {:alice, :carol}])
+
       state = ETS.build_index(state, "parent", [0])
       result = ETS.get_indexed(state, "parent", [0], {:alice})
       assert length(result) == 2
@@ -23,7 +26,10 @@ defmodule ExDatalog.Storage.ETSConformanceExtraTest do
 
     test "builds multi-column index and retrieves matching tuples" do
       state = ETS.init(@schemas)
-      state = ETS.insert_many(state, "parent", [{:alice, :bob}, {:carol, :dave}, {:alice, :carol}])
+
+      state =
+        ETS.insert_many(state, "parent", [{:alice, :bob}, {:carol, :dave}, {:alice, :carol}])
+
       state = ETS.build_index(state, "parent", [0, 1])
       result = ETS.get_indexed(state, "parent", [0, 1], {:alice, :bob})
       assert result == [{:alice, :bob}]
@@ -49,9 +55,11 @@ defmodule ExDatalog.Storage.ETSConformanceExtraTest do
 
     test "raises ArgumentError for unknown relation" do
       state = ETS.init(@schemas)
+
       assert_raise ArgumentError, ~r/unknown relation/, fn ->
         ETS.build_index(state, "nonexistent", [0])
       end
+
       ETS.teardown(state)
     end
   end
@@ -81,9 +89,11 @@ defmodule ExDatalog.Storage.ETSConformanceExtraTest do
 
     test "raises ArgumentError for unknown relation" do
       state = ETS.init(@schemas)
+
       assert_raise ArgumentError, ~r/unknown relation/, fn ->
         ETS.update_index(state, "nonexistent", [0], [{:a, :b}])
       end
+
       ETS.teardown(state)
     end
   end
@@ -109,17 +119,21 @@ defmodule ExDatalog.Storage.ETSConformanceExtraTest do
 
     test "insert raises ArgumentError for unknown relation" do
       state = ETS.init(@schemas)
+
       assert_raise ArgumentError, ~r/unknown relation/, fn ->
         ETS.insert(state, "nonexistent", {:a, :b})
       end
+
       ETS.teardown(state)
     end
 
     test "insert_many raises ArgumentError for unknown relation" do
       state = ETS.init(@schemas)
+
       assert_raise ArgumentError, ~r/unknown relation/, fn ->
         ETS.insert_many(state, "nonexistent", [{:a, :b}])
       end
+
       ETS.teardown(state)
     end
 

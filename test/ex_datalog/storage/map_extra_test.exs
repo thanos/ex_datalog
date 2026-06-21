@@ -11,6 +11,7 @@ defmodule ExDatalog.Storage.MapExtraTest do
   describe "insert/3 error cases" do
     test "raises ArgumentError for unknown relation" do
       state = Map.init(@schemas)
+
       assert_raise ArgumentError, ~r/unknown relation/, fn ->
         Map.insert(state, "nonexistent", {:a, :b})
       end
@@ -20,6 +21,7 @@ defmodule ExDatalog.Storage.MapExtraTest do
   describe "insert_many/3 error cases" do
     test "raises ArgumentError for unknown relation" do
       state = Map.init(@schemas)
+
       assert_raise ArgumentError, ~r/unknown relation/, fn ->
         Map.insert_many(state, "nonexistent", [{:a, :b}])
       end
@@ -29,6 +31,7 @@ defmodule ExDatalog.Storage.MapExtraTest do
   describe "build_index/3 error cases" do
     test "raises ArgumentError for unknown relation" do
       state = Map.init(@schemas)
+
       assert_raise ArgumentError, ~r/unknown relation/, fn ->
         Map.build_index(state, "nonexistent", [0])
       end
@@ -45,6 +48,7 @@ defmodule ExDatalog.Storage.MapExtraTest do
   describe "update_index/4 error cases" do
     test "raises ArgumentError for unknown relation" do
       state = Map.init(@schemas)
+
       assert_raise ArgumentError, ~r/unknown relation/, fn ->
         Map.update_index(state, "nonexistent", [0], [{:a, :b}])
       end

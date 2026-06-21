@@ -56,7 +56,8 @@ defmodule ExDatalog.IRTest do
 
   describe "from_term/1 list values" do
     test "converts const list with mixed types" do
-      assert IR.from_term({:const, [1, :a, "hello"]}) == {:const, {:list, [{:int, 1}, {:atom, :a}, {:str, "hello"}]}}
+      assert IR.from_term({:const, [1, :a, "hello"]}) ==
+               {:const, {:list, [{:int, 1}, {:atom, :a}, {:str, "hello"}]}}
     end
 
     test "converts const single-element list" do
@@ -92,13 +93,17 @@ defmodule ExDatalog.IRTest do
     test "converts starts_with constraint" do
       ast_c = ExDatalog.Constraint.starts_with({:var, "X"}, {:const, "hello"})
       ir_c = IR.from_constraint(ast_c)
-      assert %IR.Constraint{op: :starts_with, left: {:var, "X"}, right: {:const, {:str, "hello"}}} = ir_c
+
+      assert %IR.Constraint{op: :starts_with, left: {:var, "X"}, right: {:const, {:str, "hello"}}} =
+               ir_c
     end
 
     test "converts contains constraint" do
       ast_c = ExDatalog.Constraint.contains({:var, "X"}, {:const, "ell"})
       ir_c = IR.from_constraint(ast_c)
-      assert %IR.Constraint{op: :contains, left: {:var, "X"}, right: {:const, {:str, "ell"}}} = ir_c
+
+      assert %IR.Constraint{op: :contains, left: {:var, "X"}, right: {:const, {:str, "ell"}}} =
+               ir_c
     end
   end
 
@@ -106,7 +111,12 @@ defmodule ExDatalog.IRTest do
     test "converts member constraint" do
       ast_c = ExDatalog.Constraint.member({:var, "X"}, {:const, [:a, :b]})
       ir_c = IR.from_constraint(ast_c)
-      assert %IR.Constraint{op: :member, left: {:var, "X"}, right: {:const, {:list, [{:atom, :a}, {:atom, :b}]}}} = ir_c
+
+      assert %IR.Constraint{
+               op: :member,
+               left: {:var, "X"},
+               right: {:const, {:list, [{:atom, :a}, {:atom, :b}]}}
+             } = ir_c
     end
   end
 
@@ -132,7 +142,8 @@ defmodule ExDatalog.IRTest do
     end
 
     test "resolves const list" do
-      assert IR.resolve_operand({:const, {:list, [{:int, 1}, {:atom, :a}]}}, %{}) == {:ok, [1, :a]}
+      assert IR.resolve_operand({:const, {:list, [{:int, 1}, {:atom, :a}]}}, %{}) ==
+               {:ok, [1, :a]}
     end
 
     test "returns :unbound for wildcard" do
@@ -154,7 +165,11 @@ defmodule ExDatalog.IRTest do
     end
 
     test "converts list recursively" do
-      assert IR.value_to_native({:list, [{:int, 1}, {:atom, :foo}, {:str, "bar"}]}) == [1, :foo, "bar"]
+      assert IR.value_to_native({:list, [{:int, 1}, {:atom, :foo}, {:str, "bar"}]}) == [
+               1,
+               :foo,
+               "bar"
+             ]
     end
   end
 
@@ -165,7 +180,8 @@ defmodule ExDatalog.IRTest do
         head: %IR.Atom{relation: "high", terms: [{:var, "X"}]},
         body: [
           {:positive, %IR.Atom{relation: "income", terms: [{:var, "X"}, {:var, "S"}]}},
-          {:constraint, %IR.Constraint{op: :gt, left: {:var, "S"}, right: {:const, {:int, 100}}, result: nil}}
+          {:constraint,
+           %IR.Constraint{op: :gt, left: {:var, "S"}, right: {:const, {:int, 100}}, result: nil}}
         ],
         stratum: 0,
         metadata: %{}

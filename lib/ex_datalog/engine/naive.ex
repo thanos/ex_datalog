@@ -337,7 +337,7 @@ defmodule ExDatalog.Engine.Naive do
          ctx
        ) do
     Enum.reduce(strata, {state, 0, base_origins, :fixpoint}, fn %IR.Stratum{index: stratum_idx},
-                                                                  {s, total_iter, origins, term} ->
+                                                                {s, total_iter, origins, term} ->
       stratum_rules = Enum.filter(rules, fn r -> r.stratum == stratum_idx end)
 
       if stratum_rules == [] do

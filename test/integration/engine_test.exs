@@ -537,7 +537,7 @@ defmodule ExDatalog.IntegrationTest do
       assert knowledge.stats.termination == :fixpoint
     end
 
-test "max_iterations hit returns :iteration_limit termination with partial results" do
+    test "max_iterations hit returns :iteration_limit termination with partial results" do
       {:ok, knowledge} =
         Program.new()
         |> Program.add_relation("parent", [:atom, :atom])

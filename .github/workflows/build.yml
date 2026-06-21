@@ -17,8 +17,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - elixir: "1.20.0-rc.3"
-            otp: "28.4.1"
+          - elixir: "1.20"
+            otp: "29"
           # Latest stable versions
           - elixir: "1.19.5"
             otp: "28.4.1"

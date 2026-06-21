@@ -55,7 +55,7 @@ defmodule ExDatalog do
 
   ## Options
 
-`materialize/2` and `evaluate/2` accept:
+  `materialize/2` and `evaluate/2` accept:
 
    - `engine` — backend module (default: `ExDatalog.Engine.Naive`)
    - `storage` — storage module (default: `ExDatalog.Storage.Map`)

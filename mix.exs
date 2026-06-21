@@ -1,7 +1,7 @@
 defmodule ExDatalog.MixProject do
   use Mix.Project
 
-  @version "0.3.0"
+  @version "0.4.0"
   @source_url "https://github.com/thanos/ex_datalog"
 
   def project do
@@ -114,8 +114,21 @@ defmodule ExDatalog.MixProject do
         {"docs/what-is-datalog.md", filename: "what-is-datalog", title: "What is Datalog?"},
         {"docs/constraints.md", filename: "constraints", title: "Constraints"},
         {"docs/storage_backends.md", filename: "storage-backends", title: "Storage Backends"},
-        {"livebook/quickstart.livemd", filename: "quickstart", title: "Quickstart Tutorial"},
-        {"livebook/examples.livemd", filename: "examples", title: "Examples"}
+        {"livebooks/quickstart.livemd", filename: "quickstart", title: "Quickstart Tutorial"},
+        {"livebooks/examples.livemd", filename: "examples", title: "Examples"},
+        {"livebooks/ex_datalog_dsl.livemd", filename: "dsl-tutorial", title: "DSL Tutorial"},
+        {"docs/migration_dsl.md",
+         filename: "migration-dsl", title: "Migration: Builder API → DSL"},
+        {"docs/articles/01_why_datalog_on_the_beam.md",
+         filename: "why-datalog-on-the-beam", title: "Why Datalog on the BEAM"},
+        {"docs/articles/02_building_an_elixir_datalog_dsl.md",
+         filename: "building-an-elixir-datalog-dsl", title: "Building an Elixir Datalog DSL"},
+        {"docs/articles/03_datalog_rules_as_elixir_macros.md",
+         filename: "datalog-rules-as-elixir-macros", title: "Datalog Rules as Elixir Macros"},
+        {"docs/articles/04_querying_materialized_knowledge.md",
+         filename: "querying-materialized-knowledge", title: "Querying Materialized Knowledge"},
+        {"docs/articles/05_negation_constraints_and_safety.md",
+         filename: "negation-constraints-and-safety", title: "Negation, Constraints, and Safety"}
       ],
       groups_for_modules: [
         "Program Builder": [
@@ -138,6 +151,11 @@ defmodule ExDatalog.MixProject do
           ExDatalog.Knowledge,
           ExDatalog.Explain,
           ExDatalog.Telemetry
+        ],
+        DSL: [
+          ExDatalog.Schema,
+          ExDatalog.DSL.CompileError,
+          ExDatalog.UnsupportedFeature
         ]
       ]
     ]
