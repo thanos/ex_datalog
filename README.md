@@ -36,14 +36,18 @@ It continues to influence modern databases, compilers, static analysis tools, kn
 - **Builder API** for constructing programs (relations, facts, rules, constraints)
 - **Schema DSL** — Ecto-inspired macros for declaring relations, facts, rules, and queries
 - **Constraint types**: comparisons, arithmetic, type predicates, string predicates, membership
+- **Aggregates**: `count`, `sum`, `min`, `max` with grouping and stratification
+- **BEAM callback predicates**: call deterministic Elixir functions from rules (timeout-isolated)
 - **Negation** with stratified evaluation
 - **Recursive rules** with semi-naive fixpoint evaluation
+- **Query planner** (`ExDatalog.Planner`) with `explain_plan/1,2`
+- **Magic sets** (experimental): demand-driven evaluation via `strategy: :magic_sets`
 - **Post-materialization queries** (`query` macro with `find`/`where`)
 - **Pluggable storage backends**: `Storage.Map` (default, on-heap) and `Storage.ETS` (off-heap, concurrent reads)
 - **Provenance / derivation explain** (`explain: true`)
-- **Telemetry** integration (`:telemetry` events for query lifecycle)
+- **Telemetry** integration (`:telemetry` events for query/planner lifecycle)
 - **Deterministic**: same program + same facts = same result regardless of backend
-- 792 tests, 0 failures, credo clean
+- 845 tests, 0 failures, credo clean
 
 ## Installation
 
@@ -52,7 +56,7 @@ Add `ex_datalog` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:ex_datalog, "~> 0.4.1"}
+    {:ex_datalog, "~> 0.5.0"}
   ]
 end
 ```
@@ -229,6 +233,84 @@ Program.add_rule(program, {"hello_word", [:X]},
 )
 ```
 
+### Aggregates
+
+Group and reduce bindings with `count`, `sum`, `min`, `max`:
+
+```elixir
+defmodule DeptStats do
+  use ExDatalog.Schema
+
+  relation "emp", [:atom, :atom]
+  relation "dept_count", [:atom, :integer]
+
+  fact "emp", [:alice, :eng]
+  fact "emp", [:bob, :eng]
+  fact "emp", [:carol, :sales]
+
+  rule dept_count(D, N) do
+    emp(_, D)
+    count(E, N)
+  end
+end
+
+{:ok, k} = ExDatalog.materialize(DeptStats)
+Knowledge.get(k, "dept_count")
+#=> MapSet.new([{:eng, 2}, {:sales, 1}])
+```
+
+### BEAM callback predicates
+
+Call deterministic Elixir functions from rules:
+
+```elixir
+defmodule Gated do
+  use ExDatalog.Schema
+
+  relation "user", [:atom]
+  relation "active_user", [:atom]
+
+  predicate :is_adult, AgeChecker, :adult?, [:atom], :boolean
+
+  fact "user", [:alice]
+  fact "user", [:bob]
+
+  rule active_user(U) do
+    user(U)
+    is_adult(U)
+  end
+end
+
+defmodule AgeChecker do
+  def adult?(:alice), do: true
+  def adult?(:bob), do: false
+end
+
+{:ok, k} = ExDatalog.materialize(Gated)
+Knowledge.get(k, "active_user")
+#=> MapSet.new([{:alice}])
+```
+
+Value-returning callbacks bind a result variable:
+
+```elixir
+predicate :length_of, StringLength, :compute, [:atom], :value
+```
+
+### Magic sets (experimental)
+
+Compute only facts relevant to a goal, instead of the full fixpoint:
+
+```elixir
+{:ok, k} = ExDatalog.materialize(program,
+  strategy: :magic_sets,
+  goal: {"ancestor", [:alice, :_]}
+)
+```
+
+Unsupported programs (negation, aggregates) automatically fall back to
+semi-naive evaluation.
+
 ### Negation
 
 Use negative body atoms with stratified evaluation. Find people who are not parents:
@@ -283,24 +365,27 @@ end
 ## Architecture
 
 ```
-ExDatalog.Program  (builder)
-        |
-        v
+ExDatalog.Program  (builder) / ExDatalog.Schema  (DSL)
+         |
+         v
 ExDatalog.Validator  (structural + semantic + stratification)
-        |
-        v
+         |
+         v
 ExDatalog.Compiler  (AST -> IR)
-        |
-        v
+         |
+         v
+ExDatalog.Planner  (strategy, strata, joins)
+         |
+         v
 ExDatalog.Engine  (behaviour)
-        |
-        v
-ExDatalog.Engine.Naive  (semi-naive fixpoint)
-        |
-        v  uses
+         |
+         v
+ExDatalog.Engine.Naive  (semi-naive fixpoint / magic-sets)
+         |
+         v  uses
 ExDatalog.Storage.Map | ExDatalog.Storage.ETS
-        |
-        v
+         |
+         v
 ExDatalog.Knowledge
 ```
 
@@ -343,6 +428,7 @@ reference.
 | Type predicate | `type_integer`, `type_binary`, `type_atom` | No (filter) |
 | String predicate | `starts_with`, `contains` | No (filter) |
 | Membership | `member` | No (filter) |
+| Aggregate | `count`, `sum`, `min`, `max` | Yes (group-and-reduce) |
 
 ## Documentation
 
@@ -350,7 +436,8 @@ reference.
 - [Constraints](docs/constraints.md) — constraint types, evaluation, and the dispatch model
 - [Storage Backends](docs/storage_backends.md) — Map vs ETS, options, capabilities, determinism guarantee
 - [Migration: Builder API → DSL](docs/migration_dsl.md) — migrate existing builder-API code to the Schema DSL
-- [DSL Articles](docs/articles/01_why_datalog_on_the_beam.md) — why Datalog on the BEAM, building the DSL, rules as macros, queries, negation
+- [Migration: v0.4 → v0.5](docs/migration_v0.5.md) — aggregates, callbacks, magic sets, and planner changes
+- [DSL Articles](docs/articles/01_why_datalog_on_the_beam.md) — why Datalog on the BEAM, building the DSL, rules as macros, queries, negation, planning, aggregates, callbacks, magic sets
 - [Quickstart Tutorial](livebooks/quickstart.livemd) — interactive Livebook walkthrough
 - [DSL Tutorial](livebooks/ex_datalog_dsl.livemd) — interactive DSL walkthrough
 - [Examples](livebooks/examples.livemd) — 10 realistic use cases (RBAC, supply chain, fraud detection, and more)
@@ -423,7 +510,7 @@ The following references are highly recommended for understanding both the theor
 | v0.3.0 | Tuple shorthand for rules (`add_rule/3`, `add_rule/4`), `Term.from/1`, `ExDatalog.Atom.from_tuple/1`, `Constraint.from_tuple/1`; renamed `Result` → `Knowledge`, `query` → `materialize` |
 | v0.4.0 | Schema DSL (`use ExDatalog.Schema`), `relation`, `fact`, `rule`, `query` macros, `not_` negation, constraint DSL, post-materialization queries |
 | v0.4.1 | DSL review fixes: correct uppercase-variable docs, clean aggregate error, query/find validation, unified `DSL.CompileError`, 792 tests |
-| v0.5.0 | Magic sets / demand-driven evaluation, general predicates as BEAM callbacks |
+| v0.5.0 | Aggregates (`count`/`sum`/`min`/`max`), BEAM callback predicates, query planner, magic sets (experimental), 845 tests |
 | v1.0.0 | Stable public API, hardened production semantics |
 
 ## License

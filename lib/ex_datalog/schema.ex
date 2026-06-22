@@ -178,12 +178,13 @@ defmodule ExDatalog.Schema do
   defmacro __using__(_opts) do
     quote do
       import ExDatalog.Schema,
-        only: [relation: 2, fact: 1, facts: 2, rule: 2, query: 2, wildcard: 0]
+        only: [relation: 2, fact: 1, facts: 2, rule: 2, query: 2, wildcard: 0, predicate: 5]
 
       Module.register_attribute(__MODULE__, :ex_datalog_relations, accumulate: true)
       Module.register_attribute(__MODULE__, :ex_datalog_facts, accumulate: true)
       Module.register_attribute(__MODULE__, :ex_datalog_rules, accumulate: true)
       Module.register_attribute(__MODULE__, :ex_datalog_queries, accumulate: true)
+      Module.register_attribute(__MODULE__, :ex_datalog_predicates, accumulate: true)
 
       @before_compile ExDatalog.Schema
     end
@@ -195,6 +196,7 @@ defmodule ExDatalog.Schema do
     facts = Module.get_attribute(env.module, :ex_datalog_facts) |> Enum.reverse()
     rules = Module.get_attribute(env.module, :ex_datalog_rules) |> Enum.reverse()
     queries = Module.get_attribute(env.module, :ex_datalog_queries) |> Enum.reverse()
+    predicates = Module.get_attribute(env.module, :ex_datalog_predicates) |> Enum.reverse()
 
     relation_names = MapSet.new(relations, fn rel -> Atom.to_string(rel.name) end)
 
@@ -213,17 +215,67 @@ defmodule ExDatalog.Schema do
       end
     end)
 
+    relation_funs =
+      Enum.map(relations, fn rel ->
+        name = rel.name
+        arity = length(rel.fields)
+        args = for i <- 1..arity, do: Macro.var(:"arg_#{i}", __MODULE__)
+
+        quote do
+          @doc """
+          Constructs a fact tuple for the `#{unquote(name)}` relation.
+
+              #{unquote(name)}(#{Enum.map_join(1..unquote(arity), ", ", fn i -> "arg_#{i}" end)})
+              #=> {"#{unquote(name)}", [#{Enum.map_join(1..unquote(arity), ", ", fn i -> "arg_#{i}" end)})]}
+
+          Pass the result to `Program.add_fact/2` as a fact tuple.
+          """
+          @spec unquote(name)(unquote_splicing(Enum.map(args, fn _ -> quote do: term() end))) ::
+                  {String.t(), [term()]}
+          def unquote(name)(unquote_splicing(args)) do
+            {unquote(Atom.to_string(name)), [unquote_splicing(args)]}
+          end
+        end
+      end)
+
     quote do
+      unquote_splicing(relation_funs)
+
       @doc """
       Returns the `ExDatalog.Program` built from this schema's relations,
-      facts, and rules.
+      compile-time facts, and rules.
+
+      Use this when all facts are declared at compile time via `fact/1`.
+      For runtime facts, use `new_program/0` and `Program.add_fact/2`.
       """
       @spec program() :: ExDatalog.Program.t()
       def program do
         ExDatalog.Schema.__build_program__(
           unquote(Macro.escape(relations)),
           unquote(Macro.escape(facts)),
-          unquote(Macro.escape(rules))
+          unquote(Macro.escape(rules)),
+          unquote(Macro.escape(predicates))
+        )
+      end
+
+      @doc """
+      Returns a blank `ExDatalog.Program` from this schema's relations and
+      rules, **without** any compile-time facts.
+
+      Add runtime facts via the pipeable `Program.add_fact/2`:
+
+          DeptCount.new()
+          |> Program.add_fact(DeptCount.emp(:alice, :eng))
+          |> Program.add_fact(DeptCount.emp(:bob, :eng))
+          |> Program.materialize()
+      """
+      @spec new() :: ExDatalog.Program.t()
+      def new do
+        ExDatalog.Schema.__build_program__(
+          unquote(Macro.escape(relations)),
+          [],
+          unquote(Macro.escape(rules)),
+          unquote(Macro.escape(predicates))
         )
       end
 
@@ -258,8 +310,9 @@ defmodule ExDatalog.Schema do
   end
 
   @doc false
-  def __build_program__(relations, facts, rules) do
+  def __build_program__(relations, facts, rules, predicates \\ []) do
     program = ExDatalog.Program.new()
+    predicate_map = Map.new(predicates, fn p -> {Atom.to_string(p.name), p} end)
 
     program =
       Enum.reduce(relations, program, fn rel_meta, acc ->
@@ -293,8 +346,7 @@ defmodule ExDatalog.Schema do
         body =
           Enum.map(body_literals, fn
             {:positive, %ExDatalog.Atom{} = atom} ->
-              {:positive,
-               %ExDatalog.Atom{atom | terms: Enum.map(atom.terms, &term_from_parsed/1)}}
+              resolve_positive_or_callback(atom, predicate_map)
 
             {:negative, %ExDatalog.Atom{} = atom} ->
               {:negative,
@@ -358,6 +410,31 @@ defmodule ExDatalog.Schema do
   defp term_from_parsed({:var, name}), do: ExDatalog.Term.var(name)
   defp term_from_parsed({:const, value}), do: ExDatalog.Term.from(value)
   defp term_from_parsed(:wildcard), do: ExDatalog.Term.from(:_)
+
+  # A positive body atom whose "relation" matches a declared predicate becomes
+  # a callback literal; otherwise it stays a positive atom.
+  defp resolve_positive_or_callback(%ExDatalog.Atom{relation: rel, terms: terms}, predicate_map) do
+    case Map.get(predicate_map, rel) do
+      nil ->
+        {:positive, %ExDatalog.Atom{relation: rel, terms: Enum.map(terms, &term_from_parsed/1)}}
+
+      %ExDatalog.Schema.PredicateMeta{} = pred ->
+        build_callback_literal(pred, terms)
+    end
+  end
+
+  defp build_callback_literal(%ExDatalog.Schema.PredicateMeta{} = pred, terms) do
+    arg_terms = Enum.map(terms, &term_from_parsed/1)
+
+    case pred.return_type do
+      :boolean ->
+        {:callback, ExDatalog.Callback.new(pred.module, pred.function, arg_terms, nil)}
+
+      :value ->
+        {args, [result]} = Enum.split(arg_terms, length(arg_terms) - 1)
+        {:callback, ExDatalog.Callback.new(pred.module, pred.function, args, result)}
+    end
+  end
 
   @doc false
   def __execute_query__(name, knowledge, queries) when is_list(queries) do
@@ -623,7 +700,14 @@ defmodule ExDatalog.Schema do
 
   defp parse_term({:agg, _, _args}) do
     raise ExDatalog.DSL.CompileError,
-      message: "aggregates are not yet supported (planned for v0.6.0)"
+      message: "use count/sum/min/max for aggregates (e.g. `count(X, N)`)"
+  end
+
+  defp parse_term({op, _, _args}) when op in [:count, :sum, :min, :max] do
+    raise ExDatalog.DSL.CompileError,
+      message:
+        "aggregate #{op}/2 cannot appear in a rule head or as a term; " <>
+          "place it in the rule body (e.g. `#{op}(X, Result)`) and use Result in the head"
   end
 
   defp parse_term(other) do
@@ -670,8 +754,16 @@ defmodule ExDatalog.Schema do
 
   defp parse_body_call({:agg, _, _args}) do
     raise ExDatalog.DSL.CompileError,
-      message: "aggregates are not yet supported (planned for v0.6.0)"
+      message: "use count/sum/min/max for aggregates (e.g. `count(X, N)`)"
   end
+
+  aggregate_ops = [:count, :sum, :min, :max]
+
+  Enum.each(aggregate_ops, fn op ->
+    defp parse_body_call({unquote(op), _, [input, result]}) do
+      {:constraint, build_aggregate(unquote(op), input, result)}
+    end
+  end)
 
   constraint_ops = [
     :eq,
@@ -744,6 +836,10 @@ defmodule ExDatalog.Schema do
       ExDatalog.Constraint.from_tuple({unquote(op), left, right})
     end
   end)
+
+  defp build_aggregate(op, input, result) do
+    ExDatalog.Constraint.from_tuple({op, parse_term(input), parse_term(result)})
+  end
 
   defp build_constraint(op, args) do
     raise ExDatalog.DSL.CompileError,
@@ -874,4 +970,55 @@ defmodule ExDatalog.Schema do
   """
   @spec wildcard() :: :wildcard
   def wildcard, do: :wildcard
+
+  @doc """
+  Declares a BEAM callback predicate usable in rule bodies.
+
+      predicate :adult?, MyPredicates, :adult?, [:integer], :boolean
+
+      rule adult(Name) do
+        person(Name, Age)
+        adult?(Age)
+      end
+
+  Arguments:
+
+  - `name` — the predicate name used in rule bodies.
+  - `module` / `function` — the Elixir function to call.
+  - `arg_types` — declared argument types (currently informational; their
+    length sets the callback arity, validated at compile time).
+  - `return_type` — `:boolean` (filter) or `:value` (binds the last argument
+    position as the result variable).
+
+  For `:value` predicates, the **last** argument in the rule-body call is the
+  result variable; the remaining arguments are passed to the function.
+
+  The referenced `module.function` must be defined and exported with arity
+  matching the inputs, or a compile-time `ExDatalog.DSL.CompileError` is raised.
+  """
+  defmacro predicate(name, module, function, arg_types, return_type) do
+    quote do
+      ExDatalog.Schema.__register_predicate__(
+        __MODULE__,
+        unquote(name),
+        unquote(module),
+        unquote(function),
+        unquote(Macro.escape(arg_types)),
+        unquote(return_type)
+      )
+    end
+  end
+
+  @doc false
+  def __register_predicate__(mod, name, module, function, arg_types, return_type)
+      when is_atom(name) and is_atom(module) and is_atom(function) and is_list(arg_types) and
+             return_type in [:boolean, :value] do
+    Module.put_attribute(mod, :ex_datalog_predicates, %ExDatalog.Schema.PredicateMeta{
+      name: name,
+      module: module,
+      function: function,
+      arg_types: arg_types,
+      return_type: return_type
+    })
+  end
 end

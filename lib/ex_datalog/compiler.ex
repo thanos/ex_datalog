@@ -200,6 +200,7 @@ defmodule ExDatalog.Compiler do
       Enum.map(body, fn
         {:positive, %ExDatalog.Atom{} = atom} -> {:positive, IR.from_atom(atom)}
         {:negative, %ExDatalog.Atom{} = atom} -> {:negative, IR.from_atom(atom)}
+        {:callback, %ExDatalog.Callback{} = cb} -> {:callback, IR.from_callback(cb)}
       end)
 
     ir_constraints = Enum.map(constraints, fn c -> {:constraint, IR.from_constraint(c)} end)

@@ -18,6 +18,8 @@ defmodule ExDatalog.Capabilities do
   | `type_predicates` | `true` | Supports type-check predicates |
   | `string_predicates` | `true` | Supports string predicates |
   | `provenance` | `true` | Supports derivation provenance |
+  | `aggregate_constraints` | `true` | Supports aggregate constraints (count/sum/min/max) |
+  | `beam_callbacks` | `true` | Supports BEAM callback predicates |
   | `external_execution` | `false` | Reserved for Z3, Soufflé, etc. |
 
   ## Merging
@@ -61,6 +63,8 @@ defmodule ExDatalog.Capabilities do
           type_predicates: boolean(),
           string_predicates: boolean(),
           provenance: boolean(),
+          aggregate_constraints: boolean(),
+          beam_callbacks: boolean(),
           external_execution: boolean()
         }
 
@@ -72,6 +76,8 @@ defmodule ExDatalog.Capabilities do
             type_predicates: true,
             string_predicates: true,
             provenance: true,
+            aggregate_constraints: true,
+            beam_callbacks: true,
             external_execution: false
 
   @boolean_fields [
@@ -82,6 +88,8 @@ defmodule ExDatalog.Capabilities do
     :type_predicates,
     :string_predicates,
     :provenance,
+    :aggregate_constraints,
+    :beam_callbacks,
     :external_execution
   ]
 

@@ -617,7 +617,7 @@ defmodule ExDatalog.SchemaTest do
 
   describe "UnsupportedFeature" do
     test "aggregate syntax in rule head raises DSL.CompileError" do
-      assert_raise ExDatalog.DSL.CompileError, ~r/aggregates are not yet supported/, fn ->
+      assert_raise ExDatalog.DSL.CompileError, ~r/use count\/sum\/min\/max for aggregates/, fn ->
         Code.compile_string("""
         defmodule AggHeadTestErr do
           use ExDatalog.Schema
@@ -643,7 +643,7 @@ defmodule ExDatalog.SchemaTest do
     end
 
     test "aggregate syntax in rule body raises DSL.CompileError" do
-      assert_raise ExDatalog.DSL.CompileError, ~r/aggregates are not yet supported/, fn ->
+      assert_raise ExDatalog.DSL.CompileError, ~r/use count\/sum\/min\/max for aggregates/, fn ->
         Code.compile_string("""
         defmodule AggBodyTestErr do
           use ExDatalog.Schema
@@ -1446,6 +1446,92 @@ defmodule ExDatalog.SchemaTest do
       assert MapSet.size(Knowledge.get(knowledge, "reachable")) == 1
     end
   end
+
+  describe "aggregate DSL" do
+    test "count aggregate in rule body" do
+      defmodule CountDSLTest do
+        use ExDatalog.Schema
+
+        relation :emp do
+          field(:name, :atom)
+          field(:dept, :atom)
+        end
+
+        relation :dept_count do
+          field(:dept, :atom)
+          field(:n, :integer)
+        end
+
+        fact(emp(:alice, :eng))
+        fact(emp(:bob, :eng))
+        fact(emp(:carol, :ops))
+
+        rule dept_count(D, N) do
+          emp(E, D)
+          count(E, N)
+        end
+      end
+
+      {:ok, knowledge} = CountDSLTest.materialize()
+      result = Knowledge.get(knowledge, "dept_count")
+      assert {:eng, 2} in result
+      assert {:ops, 1} in result
+    end
+
+    test "sum aggregate in rule body" do
+      defmodule SumDSLTest do
+        use ExDatalog.Schema
+
+        relation :salary do
+          field(:name, :atom)
+          field(:dept, :atom)
+          field(:amount, :integer)
+        end
+
+        relation :dept_total do
+          field(:dept, :atom)
+          field(:total, :integer)
+        end
+
+        fact(salary(:alice, :eng, 100))
+        fact(salary(:bob, :eng, 80))
+
+        rule dept_total(D, T) do
+          salary(E, D, A)
+          sum(A, T)
+        end
+      end
+
+      {:ok, knowledge} = SumDSLTest.materialize()
+      assert {:eng, 180} in Knowledge.get(knowledge, "dept_total")
+    end
+
+    test "aggregate in head position raises DSL.CompileError" do
+      assert_raise ExDatalog.DSL.CompileError, ~r/cannot appear in a rule head/, fn ->
+        Code.compile_string("""
+        defmodule AggHeadAggTest do
+          use ExDatalog.Schema
+
+          relation :emp do
+            field(:name, :atom)
+            field(:dept, :atom)
+          end
+
+          relation :dept_count do
+            field(:dept, :atom)
+            field(:n, :integer)
+          end
+
+          fact(emp(:alice, :eng))
+
+          rule dept_count(D, count(E, N)) do
+            emp(E, D)
+          end
+        end
+        """)
+      end
+    end
+  end
 end
 
 defmodule ExDatalog.SchemaCoverageTest do
@@ -1814,7 +1900,7 @@ defmodule ExDatalog.SchemaErrorTest do
     end
 
     test "aggregate in rule head raises DSL.CompileError" do
-      assert_raise ExDatalog.DSL.CompileError, ~r/aggregates are not yet supported/, fn ->
+      assert_raise ExDatalog.DSL.CompileError, ~r/use count\/sum\/min\/max for aggregates/, fn ->
         Code.compile_string("""
         defmodule AggHeadErrTest do
           use ExDatalog.Schema
@@ -1840,7 +1926,7 @@ defmodule ExDatalog.SchemaErrorTest do
     end
 
     test "aggregate in rule body raises DSL.CompileError" do
-      assert_raise ExDatalog.DSL.CompileError, ~r/aggregates are not yet supported/, fn ->
+      assert_raise ExDatalog.DSL.CompileError, ~r/use count\/sum\/min\/max for aggregates/, fn ->
         Code.compile_string("""
         defmodule AggBodyErrTest do
           use ExDatalog.Schema

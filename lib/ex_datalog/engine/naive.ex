@@ -87,6 +87,36 @@ defmodule ExDatalog.Engine.Naive do
   """
   @spec evaluate(IR.t(), keyword()) :: {:ok, Knowledge.t()} | {:error, term()}
   def evaluate(%IR{} = ir, opts \\ []) do
+    case Keyword.get(opts, :strategy, :semi_naive) do
+      :semi_naive ->
+        evaluate_semi_naive(ir, opts)
+
+      :magic_sets ->
+        evaluate_magic_sets(ir, opts)
+
+      other ->
+        {:error, "unknown evaluation strategy: #{inspect(other)}"}
+    end
+  end
+
+  defp evaluate_magic_sets(%IR{} = ir, opts) do
+    case Keyword.get(opts, :goal, nil) do
+      nil ->
+        # No goal to drive demand; fall back to full evaluation.
+        evaluate_semi_naive(ir, opts)
+
+      goal ->
+        case ExDatalog.MagicSets.transform(ir, goal) do
+          {:ok, transformed_ir} ->
+            evaluate_semi_naive(transformed_ir, Keyword.delete(opts, :strategy))
+
+          {:fallback, _reason} ->
+            evaluate_semi_naive(ir, opts)
+        end
+    end
+  end
+
+  defp evaluate_semi_naive(%IR{} = ir, opts) do
     ExDatalog.Telemetry.emit_start(ir)
     start_time = System.monotonic_time(:microsecond)
     stratum_count = length(ir.strata)
@@ -136,7 +166,8 @@ defmodule ExDatalog.Engine.Naive do
     state0 = storage_mod.init(schemas, storage_opts)
 
     constraint_ctx = %ExDatalog.Constraint.Context{
-      capabilities: storage_mod.capabilities(state0)
+      capabilities: storage_mod.capabilities(state0),
+      opts: opts
     }
 
     try do
@@ -284,14 +315,46 @@ defmodule ExDatalog.Engine.Naive do
         end)
       end)
 
-    case unstratifiable do
-      [] ->
-        :ok
+    unstratifiable_aggregates =
+      Enum.filter(ir.rules, fn rule ->
+        has_aggregate?(rule) and
+          Enum.any?(positive_literals(rule), fn {:positive, %IR.Atom{relation: rel}} ->
+            rel != rule.head.relation and Map.get(relation_strata, rel, 0) >= rule.stratum
+          end)
+      end)
 
-      rules ->
-        details = format_unstratifiable_details(rules)
-        {:error, "unstratifiable negation detected: #{details}"}
+    cond do
+      unstratifiable != [] ->
+        {:error,
+         "unstratifiable negation detected: #{format_unstratifiable_details(unstratifiable)}"}
+
+      unstratifiable_aggregates != [] ->
+        {:error,
+         "unstratifiable aggregate detected: #{format_unstratifiable_aggregate_details(unstratifiable_aggregates)}"}
+
+      true ->
+        :ok
     end
+  end
+
+  defp positive_literals(%IR.Rule{body: body}) do
+    Enum.filter(body, fn
+      {:positive, _} -> true
+      _ -> false
+    end)
+  end
+
+  defp has_aggregate?(%IR.Rule{body: body}) do
+    Enum.any?(body, fn
+      {:constraint, %IR.Constraint{op: op}} -> op in [:count, :sum, :min, :max]
+      _ -> false
+    end)
+  end
+
+  defp format_unstratifiable_aggregate_details(rules) do
+    Enum.map_join(rules, "; ", fn r ->
+      "rule #{r.id} (head: #{r.head.relation}) aggregates over a relation in the same or higher stratum"
+    end)
   end
 
   defp negative_literals(%IR.Rule{body: body}) do
@@ -551,6 +614,7 @@ defmodule ExDatalog.Engine.Naive do
       {:positive, %IR.Atom{relation: r}} -> [r]
       {:negative, %IR.Atom{relation: r}} -> [r]
       {:constraint, _} -> []
+      {:callback, _} -> []
     end)
     |> Enum.uniq()
   end

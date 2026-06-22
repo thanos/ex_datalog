@@ -140,6 +140,9 @@ defmodule ExDatalog.Validator do
         {:negative, %Atom{} = atom} ->
           check_atom(acc, atom, rels, Map.put(context, :polarity, :negative))
 
+        {:callback, %ExDatalog.Callback{} = cb} ->
+          check_callback(acc, cb, Map.put(context, :polarity, :callback))
+
         other ->
           [
             Error.new(
@@ -152,6 +155,24 @@ defmodule ExDatalog.Validator do
           ]
       end
     end)
+  end
+
+  defp check_callback(errors, %ExDatalog.Callback{module: m, function: f, args: args}, context) do
+    arity = length(args)
+
+    if Code.ensure_loaded?(m) and function_exported?(m, f, arity) do
+      errors
+    else
+      [
+        Error.new(
+          :invalid_callback,
+          Map.merge(context, %{module: m, function: f, arity: arity}),
+          "#{location(context)} callback #{inspect(m)}.#{f}/#{arity} " <>
+            "is not defined or not exported"
+        )
+        | errors
+      ]
+    end
   end
 
   defp check_atom(errors, %Atom{relation: rel, terms: terms}, rels, context) do

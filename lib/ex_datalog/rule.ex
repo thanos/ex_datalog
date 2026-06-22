@@ -28,9 +28,9 @@ defmodule ExDatalog.Rule do
 
   """
 
-  alias ExDatalog.{Atom, Constraint}
+  alias ExDatalog.{Atom, Callback, Constraint}
 
-  @type literal :: {:positive, Atom.t()} | {:negative, Atom.t()}
+  @type literal :: {:positive, Atom.t()} | {:negative, Atom.t()} | {:callback, Callback.t()}
 
   @type t :: %__MODULE__{
           head: Atom.t(),
@@ -91,12 +91,18 @@ defmodule ExDatalog.Rule do
       Enum.flat_map(body, fn
         {:positive, atom} -> Atom.variables(atom)
         {:negative, atom} -> Atom.variables(atom)
+        {:callback, cb} -> Callback.input_variables(cb) ++ callback_result_var(cb)
       end)
 
     constraint_vars =
       Enum.flat_map(constraints, fn c ->
         input = Constraint.input_variables(c)
-        result = if Constraint.arithmetic?(c), do: [Constraint.result_variable(c)], else: []
+
+        result =
+          if Constraint.arithmetic?(c) or Constraint.aggregate?(c),
+            do: [Constraint.result_variable(c)],
+            else: []
+
         input ++ result
       end)
 
@@ -141,6 +147,7 @@ defmodule ExDatalog.Rule do
     |> Enum.flat_map(fn
       {:positive, atom} -> Atom.variables(atom)
       {:negative, _} -> []
+      {:callback, _} -> []
     end)
     |> Enum.uniq()
   end
@@ -163,9 +170,11 @@ defmodule ExDatalog.Rule do
   """
   @spec body_atoms(t()) :: [Atom.t()]
   def body_atoms(%__MODULE__{body: body}) do
-    Enum.map(body, fn
-      {:positive, atom} -> atom
-      {:negative, atom} -> atom
+    body
+    |> Enum.flat_map(fn
+      {:positive, atom} -> [atom]
+      {:negative, atom} -> [atom]
+      {:callback, _} -> []
     end)
   end
 
@@ -197,5 +206,63 @@ defmodule ExDatalog.Rule do
       {:negative, _} -> true
       _ -> false
     end)
+  end
+
+  @doc """
+  Returns `true` if the rule contains any aggregate constraint
+  (`count`, `sum`, `min`, `max`).
+
+  ## Examples
+
+      iex> alias ExDatalog.{Rule, Atom, Term, Constraint}
+      iex> head = Atom.new("dept_count", [Term.var("D"), Term.var("N")])
+      iex> body = [{:positive, Atom.new("emp", [Term.var("E"), Term.var("D")])}]
+      iex> rule = Rule.new(head, body, [Constraint.count(Term.var("E"), Term.var("N"))])
+      iex> Rule.has_aggregates?(rule)
+      true
+
+  """
+  @spec has_aggregates?(t()) :: boolean()
+  def has_aggregates?(%__MODULE__{constraints: constraints}) do
+    Enum.any?(constraints, &Constraint.aggregate?/1)
+  end
+
+  @doc """
+  Returns the aggregate constraints in the rule.
+  """
+  @spec aggregate_constraints(t()) :: [Constraint.t()]
+  def aggregate_constraints(%__MODULE__{constraints: constraints}) do
+    Enum.filter(constraints, &Constraint.aggregate?/1)
+  end
+
+  @doc """
+  Returns the non-aggregate constraints in the rule.
+  """
+  @spec non_aggregate_constraints(t()) :: [Constraint.t()]
+  def non_aggregate_constraints(%__MODULE__{constraints: constraints}) do
+    Enum.reject(constraints, &Constraint.aggregate?/1)
+  end
+
+  @doc """
+  Returns `true` if the rule contains any callback predicate in its body.
+  """
+  @spec has_callbacks?(t()) :: boolean()
+  def has_callbacks?(%__MODULE__{body: body}) do
+    Enum.any?(body, &match?({:callback, _}, &1))
+  end
+
+  @doc """
+  Returns the callback predicates in the rule body.
+  """
+  @spec callbacks(t()) :: [Callback.t()]
+  def callbacks(%__MODULE__{body: body}) do
+    for {:callback, cb} <- body, do: cb
+  end
+
+  defp callback_result_var(%Callback{} = cb) do
+    case Callback.result_variable(cb) do
+      nil -> []
+      name -> [name]
+    end
   end
 end
