@@ -1,6 +1,6 @@
 # Query Planning in ExDatalog: The Seam Between IR and Engine
 
-Datalog evaluation looks direct — apply the rules, accumulate facts, stop at a fixpoint. But between the validated `ExDatalog.IR` and the semi-naive engine sits a small planner whose job is to describe *how* a program will run before it runs. ExDatalog's planner is thin by design in v0.5.0, but it is the structure future optimizations hang from: join ordering, cost-based selection, and goal-directed evaluation all plug in here.
+Datalog evaluation looks direct — apply the rules, accumulate facts, stop at a fixpoint. Alongside the validated `ExDatalog.IR` and the semi-naive engine, ExDatalog ships a small planner whose job is to describe *how* a program will run before it runs. It is an inspection tool, not a stage in the evaluation path: the engine reads the IR directly. The planner is thin by design in v0.5.0, but it is the structure future optimizations hang from: join ordering, cost-based selection, and goal-directed evaluation all plug in here.
 
 ## Why Datalog Needs a Planner
 
@@ -12,7 +12,7 @@ The IR describes *what* a program means: relations, rules, strata, safety-valida
 - which **predicates** (constraints, aggregates, callbacks) must run, classified by kind so the engine can dispatch them uniformly;
 - where **telemetry** fires so observers can profile planning without instrumenting every rule.
 
-Putting these decisions in their own struct means the engine stays a pure consumer of the plan, and an optimizer can swap plans without touching the engine. That separation is what makes the planner the right seam for future work.
+Putting these decisions in their own struct means the plan is a standalone, inspectable description of evaluation. The engine reads the IR directly (it does not consume the plan today), but keeping the description separate is what makes the planner the right seam for a future cost-based optimizer to plug into.
 
 ## The Four Planner Structs
 
@@ -210,18 +210,28 @@ This makes `explain_plan/1,2` cheap to wire into a REPL or a `mix` task without 
 
 ## Strategy Selection
 
-Strategy is recorded, not yet *executed* differently. In v0.5.0 the planner is honest about this in its module doc:
-
-> When `:magic_sets` is requested, a `:goal` option (`{relation, pattern}`) should be supplied; otherwise the planner records the strategy but the engine falls back to semi-naive.
-
-So selecting `:magic_sets` changes the plan's `strategy` field and stashes the goal in `metadata`, but the existing `Engine.Naive` still runs semi-naive bottom-up. The point of recording the strategy now is that the *shape* of the plan changes — future magic-sets rewriting will introduce magic predicates and adornment joins while keeping the same `Plan`/`Stratum`/`Join`/`Predicate` structs. Selecting the strategy is a one-line change at the call site:
+The planner *records* the requested strategy; it does not perform the rewrite
+itself. Passing `strategy: :magic_sets` sets the plan's `strategy` field and
+stashes the goal in `metadata`:
 
 ```elixir
 Planner.plan(ir)                                       # :semi_naive
 Planner.plan(ir, strategy: :magic_sets, goal: {"path", [:a, :_]})
 ```
 
-This means the planner is the right hook today for tooling that wants to *predict* which strategy will run, even if the engine hasn't yet caught up.
+The actual goal-directed rewrite is a separate concern, performed by
+`ExDatalog.MagicSets` during `materialize/2` — not by the planner. So the two
+layers play complementary roles:
+
+- `Planner.plan/2` lets tooling *predict* and display which strategy a call will
+  use, without running anything.
+- `ExDatalog.materialize(program, strategy: :magic_sets, goal: ...)` actually
+  applies the magic-sets transformation and evaluates the rewritten program (see
+  the magic-sets article for details).
+
+Both consume the same `Plan`/`Stratum`/`Join`/`Predicate` vocabulary, which is
+why a future cost-based optimizer can change the *plan* a program produces
+without changing call sites.
 
 ## Telemetry Events
 
@@ -255,19 +265,18 @@ end
 
 Attach with `:telemetry.attach/4` to react to slow planning, or use `:telemetry.span/3` wrappers in higher-level tooling that wants a single composite event. The per-call (rather than per-rule) granularity keeps planning telemetry cheap: a thousand-rule program still emits exactly three events on failure.
 
-## Where the Planner Sits in the Pipeline
+## Where the Planner Sits
 
-ExDatalog's evaluation pipeline is now.Compiler → Validator → Planner → Engine:
+The planner is a **standalone inspection tool**, not a stage in the evaluation
+pipeline. The runtime path validates and compiles a program to IR, then hands
+the IR directly to the engine:
 
 ```
-Program (DSL)
-   │  Program.compile/1 or ExDatalog.compile/1
+Program (DSL or builder)
+   │  ExDatalog.materialize/2  (validate → compile → evaluate)
    ▼
 IR  (relations, facts, rules, strata, metadata)
-   │  ExDatalog.Planner.plan/2
-   ▼
-Plan (strategy, strata, joins, predicates, metadata)
-   │  Engine.Naive.eval_plan/2 (or future engine)
+   │  Engine.Naive.evaluate/2
    ▼
 Knowledge  (materialized relations: MapSet of tuples)
    │  Schema.query/2, find/where
@@ -275,16 +284,33 @@ Knowledge  (materialized relations: MapSet of tuples)
 result
 ```
 
-The validator runs *before* the planner — that's why `plan/2` accepts the already-validated IR, and why `explain_plan/2`'s "compilation failed" path goes through `ExDatalog.compile/1` (which bundles validation) rather than re-validating inside the planner. The planner is a pure consumer of validated IR.
+The planner consumes the same validated IR, but off to the side, when you want
+to *inspect* what evaluation will do:
 
-The engine is the next consumer of the plan. Each `Stratum` in the plan corresponds to one fixpoint loop in the engine; each `Join` corresponds to one nested-loop scan; each `Predicate` corresponds to one filter or binding extension. Because the plan is descriptive, the engine doesn't *need* it to function — it can read the IR directly — but using the plan means future optimizations (join reordering, indexed joins, magic-sets rewriting) can land in the planner and immediately benefit every engine that consumes plans.
+```
+IR  ──►  ExDatalog.Planner.plan/2  ──►  Plan (strategy, strata, joins, predicates)
+```
+
+`plan/2` accepts already-validated IR, which is why `explain_plan/2`'s
+"compilation failed" path goes through `ExDatalog.compile/1` (which bundles
+validation) rather than re-validating inside the planner. The planner is a pure
+consumer of validated IR.
+
+The `Plan` is **descriptive, not executable**. The engine does not consume it —
+it reads the IR directly. Each `Stratum` in the plan corresponds to one fixpoint
+loop in the engine; each `Join` corresponds to one nested-loop scan; each
+`Predicate` corresponds to one filter or binding extension. The plan exists so
+that tooling (and future optimizers) have a structured, serializable view of the
+evaluation shape without having to re-derive it from the IR.
 
 ## Practical Notes
 
-- **The plan is cheap to build.** A few `Enum.flat_map` passes over the rules; no allocation per fact. There's no reason to skip it in production.
+- **The plan is cheap to build.** A few `Enum.flat_map` passes over the rules; no allocation per fact.
 - **Use `explain_plan/1` for debugging.** It compiles for you and returns a string you can `IO.puts` without touching data structures.
 - **Use `plan/2` for tooling.** It gives you the structs you can serialize, diff, or compare across program versions.
 - **Attach telemetry once.** `[:ex_datalog, :planner, :stop]` carries the `:strategy` and the rules/relations counts — enough to build a dashboard without parsing the plan.
-- **Don't expect magic sets to accelerate execution yet.** In v0.5.0 the strategy is recorded; the engine still runs semi-naive. The seam is in place so a future release can hook in goal-directed rewriting without changing call sites.
+- **Magic sets is live, but the planner does not drive it.** The `:strategy` recorded in a `Plan` is informational. The actual goal-directed rewrite happens in `ExDatalog.MagicSets` when you call `materialize/2` with `strategy: :magic_sets` and a `:goal` (see the magic-sets article). The planner reports the requested strategy; it does not perform the transformation.
 
-The planner is small on purpose. The cost of getting the seam right now — descriptive structs, honest strategy selection, telemetry from day one — is low, and it pays back the moment a real optimizer needs somewhere to live.
+The planner is small on purpose: descriptive structs, honest strategy reporting,
+and telemetry from day one. It is the seam where a real cost-based optimizer can
+land later without changing call sites.

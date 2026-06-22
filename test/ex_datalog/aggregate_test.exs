@@ -174,6 +174,83 @@ defmodule ExDatalog.AggregateTest do
       assert {:error, errors} = ExDatalog.materialize(program)
       assert Enum.any?(errors, fn e -> e.kind == :unbound_constraint_variable end)
     end
+
+    test "rejects aggregate whose result variable is not in the head" do
+      program =
+        Program.new()
+        |> Program.add_relation("emp", [:atom, :atom])
+        |> Program.add_relation("dept_count", [:atom])
+        |> Program.add_rule(
+          Rule.new(
+            # head is [D] only; the aggregate result N is missing
+            Atom.new("dept_count", [Term.var("D")]),
+            [{:positive, Atom.new("emp", [Term.var("E"), Term.var("D")])}],
+            [Constraint.count(Term.var("E"), Term.var("N"))]
+          )
+        )
+
+      assert {:error, errors} = ExDatalog.materialize(program)
+      assert Enum.any?(errors, fn e -> e.kind == :aggregate_result_not_in_head end)
+    end
+  end
+
+  describe "aggregate integer-input guards" do
+    defp non_integer_agg_program(agg_constraint) do
+      Program.new()
+      |> Program.add_relation("sal", [:atom, :atom])
+      |> Program.add_relation("total", [:atom, :atom])
+      |> Program.add_fact("sal", [:eng, :not_a_number])
+      |> Program.add_rule(
+        Rule.new(
+          Atom.new("total", [Term.var("D"), Term.var("T")]),
+          [{:positive, Atom.new("sal", [Term.var("D"), Term.var("A")])}],
+          [agg_constraint]
+        )
+      )
+    end
+
+    test "sum raises ArgumentError on a non-integer input" do
+      program = non_integer_agg_program(Constraint.sum(Term.var("A"), Term.var("T")))
+
+      assert_raise ArgumentError, ~r/sum aggregate requires integer inputs/, fn ->
+        ExDatalog.materialize(program)
+      end
+    end
+
+    test "min raises ArgumentError on a non-integer input" do
+      program = non_integer_agg_program(Constraint.min(Term.var("A"), Term.var("T")))
+
+      assert_raise ArgumentError, ~r/min aggregate requires integer inputs/, fn ->
+        ExDatalog.materialize(program)
+      end
+    end
+
+    test "max raises ArgumentError on a non-integer input" do
+      program = non_integer_agg_program(Constraint.max(Term.var("A"), Term.var("T")))
+
+      assert_raise ArgumentError, ~r/max aggregate requires integer inputs/, fn ->
+        ExDatalog.materialize(program)
+      end
+    end
+
+    test "count accepts non-integer inputs (counts group size)" do
+      program =
+        Program.new()
+        |> Program.add_relation("item", [:atom, :atom])
+        |> Program.add_relation("item_count", [:atom, :integer])
+        |> Program.add_fact("item", [:box, :red])
+        |> Program.add_fact("item", [:box, :blue])
+        |> Program.add_rule(
+          Rule.new(
+            Atom.new("item_count", [Term.var("B"), Term.var("N")]),
+            [{:positive, Atom.new("item", [Term.var("B"), Term.var("C")])}],
+            [Constraint.count(Term.var("C"), Term.var("N"))]
+          )
+        )
+
+      assert {:ok, knowledge} = ExDatalog.materialize(program)
+      assert {:box, 2} in Knowledge.get(knowledge, "item_count")
+    end
   end
 
   describe "aggregate stratification" do

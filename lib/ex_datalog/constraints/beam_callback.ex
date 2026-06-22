@@ -66,9 +66,9 @@ defmodule ExDatalog.Constraints.BeamCallback do
 
   defp bind_result(binding, {:var, name}, value), do: Map.put(binding, name, value)
 
-  defp flushlate(ref) do
+  defp flush_late(ref) do
     receive do
-      {^ref, _} -> flushlate(ref)
+      {^ref, _} -> flush_late(ref)
     after
       0 -> :ok
     end
@@ -106,7 +106,7 @@ defmodule ExDatalog.Constraints.BeamCallback do
       timeout_ms ->
         Process.exit(pid, :kill)
         Process.demonitor(monitor_ref, [:flush])
-        flushlate(ref)
+        flush_late(ref)
         {:error, :timeout}
     end
   end

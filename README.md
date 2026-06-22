@@ -47,7 +47,7 @@ It continues to influence modern databases, compilers, static analysis tools, kn
 - **Provenance / derivation explain** (`explain: true`)
 - **Telemetry** integration (`:telemetry` events for query/planner lifecycle)
 - **Deterministic**: same program + same facts = same result regardless of backend
-- 861 tests, 0 failures, credo clean
+- 871 tests, 0 failures, credo clean
 
 ## Installation
 
@@ -522,7 +522,7 @@ The following references are highly recommended for understanding both the theor
 | v0.3.0 | Tuple shorthand for rules (`add_rule/3`, `add_rule/4`), `Term.from/1`, `ExDatalog.Atom.from_tuple/1`, `Constraint.from_tuple/1`; renamed `Result` → `Knowledge`, `query` → `materialize` |
 | v0.4.0 | Schema DSL (`use ExDatalog.Schema`), `relation`, `fact`, `rule`, `query` macros, `not_` negation, constraint DSL, post-materialization queries |
 | v0.4.1 | DSL review fixes: correct uppercase-variable docs, clean aggregate error, query/find validation, unified `DSL.CompileError`, 792 tests |
-| v0.5.0 | Aggregates (`count`/`sum`/`min`/`max`), BEAM callback predicates, query planner, magic sets (experimental), runtime facts API, 861 tests |
+| v0.5.0 | Aggregates (`count`/`sum`/`min`/`max`), BEAM callback predicates, query planner, magic sets (experimental), runtime facts API, 871 tests |
 | v1.0.0 | Stable public API, hardened production semantics |
 
 ## License

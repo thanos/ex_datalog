@@ -29,7 +29,80 @@ defmodule ExDatalog.MagicSetsTest do
     )
   end
 
+  # A doubly-recursive transitive-closure program: the recursive rule contains
+  # TWO body atoms referencing the goal relation. This is the shape that
+  # exercises supplementary-rule id assignment in the magic-sets transform.
+  defp reach_program(facts) do
+    base =
+      Program.new()
+      |> Program.add_relation("edge", [:atom, :atom])
+      |> Program.add_relation("reach", [:atom, :atom])
+
+    base = Enum.reduce(facts, base, fn {p, c}, acc -> Program.add_fact(acc, "edge", [p, c]) end)
+
+    base
+    |> Program.add_rule(
+      Rule.new(
+        Atom.new("reach", [Term.var("X"), Term.var("Y")]),
+        [{:positive, Atom.new("edge", [Term.var("X"), Term.var("Y")])}]
+      )
+    )
+    |> Program.add_rule(
+      Rule.new(
+        Atom.new("reach", [Term.var("X"), Term.var("Z")]),
+        [
+          {:positive, Atom.new("reach", [Term.var("X"), Term.var("Y")])},
+          {:positive, Atom.new("reach", [Term.var("Y"), Term.var("Z")])}
+        ]
+      )
+    )
+  end
+
   @chain [{:a, :b}, {:b, :c}, {:c, :d}, {:d, :e}]
+
+  describe "multiple recursive body atoms (rule-id uniqueness)" do
+    test "transformed IR keeps unique rule IDs" do
+      {:ok, ir} = ExDatalog.compile(reach_program(@chain))
+      {:ok, transformed} = MagicSets.transform(ir, {"reach", [:a, :_]})
+
+      ids = Enum.map(transformed.rules, & &1.id)
+      assert ids == Enum.uniq(ids), "transformed rules have duplicate IDs: #{inspect(ids)}"
+    end
+
+    test "provenance map retains every transformed rule" do
+      {:ok, ir} = ExDatalog.compile(reach_program(@chain))
+      {:ok, transformed} = MagicSets.transform(ir, {"reach", [:a, :_]})
+
+      rules_map = Map.new(transformed.rules, fn r -> {r.id, r} end)
+
+      assert map_size(rules_map) == length(transformed.rules),
+             "duplicate rule IDs collapsed the provenance map"
+    end
+
+    test "goal-restricted result equals the semi-naive subset" do
+      program = reach_program(@chain)
+
+      {:ok, magic} =
+        ExDatalog.materialize(program, strategy: :magic_sets, goal: {"reach", [:a, :_]})
+
+      {:ok, full} = ExDatalog.materialize(program)
+
+      expected = Knowledge.match(full, "reach", [:a, :_])
+      assert Knowledge.match(magic, "reach", [:a, :_]) == expected
+    end
+
+    test "evaluates with explain enabled without losing rules" do
+      program = reach_program(@chain)
+
+      {:ok, ir} = ExDatalog.compile(program)
+      {:ok, transformed} = MagicSets.transform(ir, {"reach", [:a, :_]})
+      {:ok, knowledge} = ExDatalog.evaluate(transformed, explain: true)
+
+      # Every derived reach fact must have a provenance origin.
+      assert knowledge.provenance != nil
+      assert Knowledge.match(knowledge, "reach", [:a, :_]) |> MapSet.size() > 0
+    end
+  end
 
   describe "correctness vs semi-naive" do
     test "goal-restricted query matches the semi-naive subset" do

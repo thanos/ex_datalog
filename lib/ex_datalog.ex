@@ -190,6 +190,15 @@ defmodule ExDatalog do
 
   Returns `{:ok, ExDatalog.Knowledge.t()}` or `{:error, reason}`.
 
+  ## Aggregate input types
+
+  Aggregates (`sum`, `min`, `max`) are integer-only. If an aggregate's input
+  resolves to a non-integer value at reduction time, evaluation **raises**
+  `ArgumentError` rather than returning `{:error, reason}`. A non-integer
+  aggregate input is treated as a data-modeling error and surfaces loudly. If
+  the input domain is untrusted, constrain it with a type predicate (for example
+  `is_integer/1`) earlier in the rule body, or wrap the call in a `try`.
+
   ## Options
 
   See `evaluate/2` for available options, plus:

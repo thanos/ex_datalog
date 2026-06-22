@@ -60,7 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Aggregates are integer-only; `avg` and float support are deferred to v0.6.0.
 - Magic sets is experimental and opt-in; the default strategy is unchanged.
-- All v0.4.1 tests continue to pass. Suite: 861 tests, 10 properties,
+- All v0.4.1 tests continue to pass. Suite: 871 tests, 10 properties,
   152 doctests, ~93% coverage.
 
 ## v0.4.1 (2026-06-21)

@@ -74,7 +74,9 @@ defmodule ExDatalog.Schema do
         field :child, :atom
       end
 
-  Supported field types: `:atom`, `:integer`, `:string`, `:any`.
+  Supported field types: `:atom`, `:integer`, `:string`, `:any`. A relation
+  must declare at least one field; zero-arity relations are not supported and
+  raise `ExDatalog.DSL.CompileError` at compile time.
 
   ## Fact DSL
 
@@ -538,6 +540,13 @@ defmodule ExDatalog.Schema do
   @doc false
   def __define_relation__(module, name, block) do
     fields = extract_fields(block)
+
+    if fields == [] do
+      raise ExDatalog.DSL.CompileError,
+        message:
+          "relation #{inspect(name)}: a relation must declare at least one field; " <>
+            "zero-arity relations are not supported"
+    end
 
     Module.put_attribute(module, :ex_datalog_relations, %ExDatalog.Schema.RelationMeta{
       name: name,

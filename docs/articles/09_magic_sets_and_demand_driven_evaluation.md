@@ -79,7 +79,9 @@ Without a seed, the magic relation is empty and no goal-relation rule can fire, 
 
 ### 4. Rule Rewriting
 
-Every rule whose head is the goal relation is rewritten to *consume* the magic predicate as its first body atom. Only bindings consistent with an existing magic tuple are allowed to proceed. For the recursive ancestor rule this means:
+Every rule whose head is the goal relation is rewritten in two ways.
+
+**(a) Demand restriction.** The magic predicate is prepended as the first body atom, so only bindings consistent with an existing magic tuple proceed:
 
 ```
 ancestor(X, Z) :- parent(X, Y), ancestor(Y, Z).
@@ -89,26 +91,59 @@ becomes
 ancestor(X, Z) :- magic_ancestor_bf(X), parent(X, Y), ancestor(Y, Z).
 ```
 
-The implementation prepends the magic atom:
+**(b) Demand propagation.** For each recursive body atom that references the goal relation, a *supplementary* magic rule is generated so demand flows from the head to the recursive subgoal. The recursive call `ancestor(Y, Z)` only makes sense once we know we need ancestors of `Y`, so:
+
+```
+magic_ancestor_bf(Y) :- magic_ancestor_bf(X), parent(X, Y).
+```
+
+Without this rule the magic table would never grow past the seed, and only direct facts would be derived. The implementation produces both the rewritten rule and the supplementary rules, assigning each supplementary rule a fresh unique id:
 
 ```elixir
-defp rewrite_rule(%IR.Rule{head: %IR.Atom{relation: rel} = head} = rule, goal_relation, magic_rel, bound_positions)
+defp rewrite_rule(%IR.Rule{head: %IR.Atom{relation: rel} = head} = rule, goal_relation, magic_rel, bound_positions, next_id)
        when rel == goal_relation do
   magic_terms = bound_head_terms(head, bound_positions)
   magic_atom = %IR.Atom{relation: magic_rel, terms: magic_terms}
-  %IR.Rule{rule | body: [{:positive, magic_atom} | rule.body]}
+  rewritten = %IR.Rule{rule | body: [{:positive, magic_atom} | rule.body]}
+
+  recursive_atoms =
+    rule.body
+    |> Enum.with_index()
+    |> Enum.filter(fn
+      {{:positive, %IR.Atom{relation: ^goal_relation}}, _idx} -> true
+      _ -> false
+    end)
+
+  {supplementary, final_id} =
+    Enum.map_reduce(recursive_atoms, next_id, fn {{:positive, body_atom}, idx}, id ->
+      prefix_body = Enum.take(rule.body, idx)
+      body_magic_terms = bound_head_terms(body_atom, bound_positions)
+
+      sup_rule = %IR.Rule{
+        id: id,
+        head: %IR.Atom{relation: magic_rel, terms: body_magic_terms},
+        body: [{:positive, magic_atom} | prefix_body],
+        stratum: rule.stratum
+      }
+
+      {sup_rule, id + 1}
+    end)
+
+  {rewritten, supplementary, final_id}
 end
 ```
 
-The magic atom projects exactly the goal's bound positions of the head, so its arity matches the magic relation. Rules whose head is *not* the goal relation are left untouched.
+The `Enum.map_reduce` threads an incrementing id so a rule with several recursive body atoms (e.g. `r(X,Z) :- r(X,Y), r(Y,Z)`) still yields supplementary rules with distinct ids, preserving the IR's rule-id uniqueness invariant.
 
-Finally, the magic relation is injected into the goal relation's stratum so the stratified evaluator processes them in the same pass:
+Finally, the magic relation and the supplementary rule ids are injected into the goal relation's stratum so the stratified evaluator processes them in the same pass:
 
 ```elixir
-defp inject_magic_into_strata(strata, goal_relation, magic_rel) do
-  Enum.map(strata, fn %IR.Stratum{relations: rels} = stratum ->
+defp inject_magic_into_strata(strata, goal_relation, magic_rel, supplementary_rules) do
+  sup_rule_ids = Enum.map(supplementary_rules, & &1.id)
+
+  Enum.map(strata, fn %IR.Stratum{relations: rels, rule_ids: rule_ids} = stratum ->
     if goal_relation in rels do
-      %IR.Stratum{stratum | relations: [magic_rel | rels]}
+      %IR.Stratum{stratum | relations: [magic_rel | rels], rule_ids: rule_ids ++ sup_rule_ids}
     else
       stratum
     end
@@ -296,7 +331,9 @@ Knowledge.match(magic, "ancestor", [:a, :_])
 #=> {(a,b), (a,c), (a,d), (a,e)}
 ```
 
-The semi-naive run derives ten facts; the magic-sets run derives only the four the query asked for. The magic relation `magic_ancestor_bf` carries the single seed `(a,)`, the recursive rule fires only when `X = a` propagated through `parent`, and the unrelated `b`, `c`, `d` lineages never enter the working set. On larger graphs the gap widens: demand restriction trades a linear-in-input scan for a slice whose size is bounded by the goal's actual reach.
+The `match/3` query returns the four pairs rooted at `:a`. Note an important subtlety for *linear* transitive closure: the demand-propagation rule seeds the magic table with **every node reachable from `:a`** (`magic_ancestor_bf` ends up holding `(a,), (b,), (c,), (d,)`), so the engine still derives all ten ancestor pairs internally — the four-pair result you see comes from the goal filter applied after materialization.
+
+Where magic sets actually shrinks the working set is when large parts of the graph are **not** reachable from the goal. Given two disconnected components `a→b→c→d` and `x→y→z`, a goal of `ancestor(:a, :_)` never seeds `x`, `y`, or `z` into the magic table, so the `x`/`y`/`z` lineage is never derived at all. On graphs with many goal-irrelevant regions the saving is large; on a single linear chain the saving is small because demand reaches every node.
 
 ## When to Use Magic Sets vs. Semi-Naive
 

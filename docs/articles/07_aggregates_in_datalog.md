@@ -44,7 +44,7 @@ defp compute(:min, values), do: Enum.min(values)
 defp compute(:max, values), do: Enum.max(values)
 ```
 
-`count` works on any group; `count` of employees is the size of the group regardless of the input variable's type. `sum`, `min`, and `max` require integer inputs. The plan is to enforce this at build time and guard at runtime; today an input list containing non-integers would surface as an Elixir runtime error from `Enum.sum/1` or `Enum.min/1`. Because aggregates are stratified above their inputs (see below), the input list is fully materialized and final before the reducer runs, so a runtime crash during reduction is a property of the data, not of evaluation order.
+`count` works on any group; `count` of employees is the size of the group regardless of the input variable's type. `sum`, `min`, and `max` require integer inputs, and this is **guarded at runtime**: a non-integer input raises a descriptive `ArgumentError` (for example, `"sum aggregate requires integer inputs, got: :x"`) from the reducer. Build-time type enforcement of aggregate inputs is future work. Because aggregates are stratified above their inputs (see below), the input list is fully materialized and final before the reducer runs, so a type error during reduction is a property of the data, not of evaluation order.
 
 ## The DSL Syntax
 
@@ -246,7 +246,15 @@ result_vars =
   end)
 ```
 
-So `Rule.head_variables(rule)` including `N` is satisfied by the `count(E, N)` constraint without `N` appearing in any positive body atom. If the head omits the result variable, the aggregate's value is silently dropped — there is no dedicated error for this, but the produced head tuple simply does not carry the computed value.
+So `Rule.head_variables(rule)` including `N` is satisfied by the `count(E, N)` constraint without `N` appearing in any positive body atom. If the head omits the result variable, the rule is **rejected at validation time** with an `:aggregate_result_not_in_head` error — the safety checker refuses to compile a rule whose aggregate result would be silently discarded:
+
+```elixir
+# rule dept_count(D) do      # head omits N
+#   emp(E, D)
+#   count(E, N)
+# end
+#=> {:error, [%ExDatalog.Validator.Error{kind: :aggregate_result_not_in_head, ...}]}
+```
 
 ## Stratification: Forcing the Aggregate Above Its Inputs
 

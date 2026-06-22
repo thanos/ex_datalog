@@ -443,7 +443,8 @@ defmodule ExDatalog.Constraint do
   @doc """
   Constructs a `sum` aggregate: `result = integer sum of input within each group`.
 
-  Inputs must be integers; non-integer inputs filter the group's contribution.
+  Inputs must be integers; a non-integer input raises `ArgumentError` at
+  reduction time.
 
   ## Examples
 

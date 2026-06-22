@@ -9,9 +9,11 @@ defmodule ExDatalog.Constraints.Aggregate do
   `evaluate/3` callback exists only to satisfy the `ExDatalog.Constraint`
   behaviour and raises if ever invoked through the per-binding pipeline.
 
-  Aggregates are integer-only. `sum` requires integer inputs (validated at
-  build time and guarded at runtime). `count` returns the group size. `min`/`max`
-  return the smallest/largest input value in the group.
+  Aggregates are integer-only. `sum`, `min`, and `max` require integer inputs,
+  guarded at runtime: a non-integer input raises `ArgumentError` from the
+  reducer (build-time type enforcement is future work). `count` returns the
+  group size regardless of input type. `min`/`max` return the smallest/largest
+  input value in the group.
   """
 
   @behaviour ExDatalog.Constraint
@@ -32,9 +34,10 @@ defmodule ExDatalog.Constraints.Aggregate do
   Groups bindings by `group_vars` and reduces each group's `input_var` values
   with the aggregate `op`, binding the reduced value to `result_var`.
 
-  Returns one extended binding per non-empty group. Empty groups never occur:
-  a group exists only because at least one binding produced its key, so the
-  reducers (`Enum.min/1`, `Enum.max/1`) are never called on an empty list.
+  Returns one extended binding per non-empty group. Empty groups never occur in
+  practice: a group exists only because at least one binding produced its key.
+  The `min`/`max` reducers still carry a defensive empty-list clause that raises
+  a clear error should that invariant ever be violated.
 
   ## Examples
 

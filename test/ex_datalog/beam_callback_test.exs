@@ -104,6 +104,36 @@ defmodule ExDatalog.BeamCallbackTest do
       {:ok, knowledge} = ExDatalog.materialize(program, callback_timeout_ms: 50)
       assert MapSet.size(Knowledge.get(knowledge, "ok")) == 0
     end
+
+    test "a timed-out callback leaves no stray messages in the caller mailbox" do
+      program =
+        Program.new()
+        |> Program.add_relation("num", [:integer])
+        |> Program.add_relation("ok", [:integer])
+        |> Program.add_fact("num", [1])
+        |> Program.add_rule(
+          Rule.new(
+            Atom.new("ok", [Term.var("X")]),
+            [
+              {:positive, Atom.new("num", [Term.var("X")])},
+              {:callback, Callback.new(Predicates, :slow, [Term.var("X")])}
+            ]
+          )
+        )
+
+      # `slow/1` sleeps 500ms then returns true; with a 50ms timeout the spawned
+      # process is killed and its late result must be flushed. Run materialize in
+      # this test process, then wait past the callback's completion time and
+      # assert nothing leaked into our mailbox.
+      {:ok, _knowledge} = ExDatalog.materialize(program, callback_timeout_ms: 50)
+      Process.sleep(600)
+
+      receive do
+        msg -> flunk("unexpected stray message in mailbox: #{inspect(msg)}")
+      after
+        0 -> :ok
+      end
+    end
   end
 
   describe "validation" do

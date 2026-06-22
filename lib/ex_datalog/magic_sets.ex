@@ -100,6 +100,8 @@ defmodule ExDatalog.MagicSets do
 
     all_rules = Enum.reverse(rewritten_rules) ++ supplementary_rules
 
+    :ok = assert_unique_rule_ids!(all_rules)
+
     new_relations = [magic_relation | ir.relations]
     new_facts = if seed_fact, do: [seed_fact | ir.facts], else: ir.facts
 
@@ -115,6 +117,20 @@ defmodule ExDatalog.MagicSets do
          rules: all_rules,
          strata: new_strata
      }}
+  end
+
+  # Defensive invariant: the transformed IR must preserve unique rule IDs, the
+  # same contract the compiler enforces. A violation here means the
+  # supplementary-rule id assignment is broken.
+  defp assert_unique_rule_ids!(rules) do
+    ids = Enum.map(rules, & &1.id)
+    duplicates = ids -- Enum.uniq(ids)
+
+    if duplicates == [] do
+      :ok
+    else
+      raise "MagicSets transform produced duplicate rule IDs: #{inspect(Enum.uniq(duplicates))}"
+    end
   end
 
   defp adornment(pattern) do
@@ -180,29 +196,31 @@ defmodule ExDatalog.MagicSets do
     magic_atom = %IR.Atom{relation: magic_rel, terms: magic_terms}
     rewritten = %IR.Rule{rule | body: [{:positive, magic_atom} | rule.body]}
 
-    supplementary =
+    recursive_atoms =
       rule.body
       |> Enum.with_index()
       |> Enum.filter(fn
         {{:positive, %IR.Atom{relation: ^goal_relation}}, _idx} -> true
         _ -> false
       end)
-      |> Enum.map(fn {{:positive, body_atom}, idx} ->
+
+    # Each supplementary rule gets a distinct id so the transformed IR keeps the
+    # rule-id uniqueness invariant (a rule may contain several recursive body
+    # atoms, e.g. `r(X,Z) :- r(X,Y), r(Y,Z)`).
+    {supplementary, final_id} =
+      Enum.map_reduce(recursive_atoms, next_id, fn {{:positive, body_atom}, idx}, id ->
         prefix_body = Enum.take(rule.body, idx)
         body_magic_terms = bound_head_terms(body_atom, bound_positions)
 
         sup_rule = %IR.Rule{
-          id: next_id,
+          id: id,
           head: %IR.Atom{relation: magic_rel, terms: body_magic_terms},
           body: [{:positive, magic_atom} | prefix_body],
           stratum: rule.stratum
         }
 
-        {sup_rule, next_id}
+        {sup_rule, id + 1}
       end)
-      |> Enum.map(fn {sup_rule, _id} -> sup_rule end)
-
-    final_id = next_id + length(supplementary)
 
     {rewritten, supplementary, final_id}
   end
