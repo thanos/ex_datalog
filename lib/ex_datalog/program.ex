@@ -279,6 +279,8 @@ defmodule ExDatalog.Program do
     end)
   end
 
+  def add_facts({:error, _} = err, _facts), do: err
+
   @doc """
   Materializes the program. A pipe-friendly convenience for
   `ExDatalog.materialize/2`.
@@ -293,9 +295,13 @@ defmodule ExDatalog.Program do
       [{:a, :b}]
   """
   @spec materialize(t(), keyword()) :: {:ok, ExDatalog.Knowledge.t()} | {:error, term()}
-  def materialize(%__MODULE__{} = program, opts \\ []) do
+  def materialize(program, opts \\ [])
+
+  def materialize(%__MODULE__{} = program, opts) do
     ExDatalog.materialize(program, opts)
   end
+
+  def materialize({:error, _} = err, _opts), do: err
 
   @doc """
   Adds a rule to the program.

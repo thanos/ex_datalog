@@ -47,7 +47,7 @@ It continues to influence modern databases, compilers, static analysis tools, kn
 - **Provenance / derivation explain** (`explain: true`)
 - **Telemetry** integration (`:telemetry` events for query/planner lifecycle)
 - **Deterministic**: same program + same facts = same result regardless of backend
-- 845 tests, 0 failures, credo clean
+- 861 tests, 0 failures, credo clean
 
 ## Installation
 
@@ -241,12 +241,19 @@ Group and reduce bindings with `count`, `sum`, `min`, `max`:
 defmodule DeptStats do
   use ExDatalog.Schema
 
-  relation "emp", [:atom, :atom]
-  relation "dept_count", [:atom, :integer]
+  relation :emp do
+    field(:name, :atom)
+    field(:dept, :atom)
+  end
 
-  fact "emp", [:alice, :eng]
-  fact "emp", [:bob, :eng]
-  fact "emp", [:carol, :sales]
+  relation :dept_count do
+    field(:dept, :atom)
+    field(:n, :integer)
+  end
+
+  fact(emp(:alice, :eng))
+  fact(emp(:bob, :eng))
+  fact(emp(:carol, :sales))
 
   rule dept_count(D, N) do
     emp(_, D)
@@ -254,7 +261,7 @@ defmodule DeptStats do
   end
 end
 
-{:ok, k} = ExDatalog.materialize(DeptStats)
+{:ok, k} = DeptStats.materialize()
 Knowledge.get(k, "dept_count")
 #=> MapSet.new([{:eng, 2}, {:sales, 1}])
 ```
@@ -267,26 +274,31 @@ Call deterministic Elixir functions from rules:
 defmodule Gated do
   use ExDatalog.Schema
 
-  relation "user", [:atom]
-  relation "active_user", [:atom]
+  relation :user do
+    field(:name, :atom)
+    field(:age, :integer)
+  end
 
-  predicate :is_adult, AgeChecker, :adult?, [:atom], :boolean
+  relation :active_user do
+    field(:name, :atom)
+  end
 
-  fact "user", [:alice]
-  fact "user", [:bob]
+  predicate(:adult?, AgeChecker, :adult?, [:integer], :boolean)
+
+  fact(user(:alice, 30))
+  fact(user(:bob, 12))
 
   rule active_user(U) do
-    user(U)
-    is_adult(U)
+    user(U, Age)
+    adult?(Age)
   end
 end
 
 defmodule AgeChecker do
-  def adult?(:alice), do: true
-  def adult?(:bob), do: false
+  def adult?(age), do: age >= 18
 end
 
-{:ok, k} = ExDatalog.materialize(Gated)
+{:ok, k} = Gated.materialize()
 Knowledge.get(k, "active_user")
 #=> MapSet.new([{:alice}])
 ```
@@ -510,7 +522,7 @@ The following references are highly recommended for understanding both the theor
 | v0.3.0 | Tuple shorthand for rules (`add_rule/3`, `add_rule/4`), `Term.from/1`, `ExDatalog.Atom.from_tuple/1`, `Constraint.from_tuple/1`; renamed `Result` → `Knowledge`, `query` → `materialize` |
 | v0.4.0 | Schema DSL (`use ExDatalog.Schema`), `relation`, `fact`, `rule`, `query` macros, `not_` negation, constraint DSL, post-materialization queries |
 | v0.4.1 | DSL review fixes: correct uppercase-variable docs, clean aggregate error, query/find validation, unified `DSL.CompileError`, 792 tests |
-| v0.5.0 | Aggregates (`count`/`sum`/`min`/`max`), BEAM callback predicates, query planner, magic sets (experimental), 845 tests |
+| v0.5.0 | Aggregates (`count`/`sum`/`min`/`max`), BEAM callback predicates, query planner, magic sets (experimental), runtime facts API, 861 tests |
 | v1.0.0 | Stable public API, hardened production semantics |
 
 ## License

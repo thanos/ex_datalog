@@ -61,9 +61,10 @@ defmodule ExDatalog do
    - `storage` — storage module (default: `ExDatalog.Storage.Map`)
    - `max_iterations` — fixpoint iteration limit (default: 10_000)
    - `timeout_ms` — wall-clock timeout in milliseconds (default: 30_000)
-   - `goal` — `{relation_name, pattern}` to filter results after evaluation
-     (default: `nil`). Only available via `materialize/2`. See `materialize/2`
-     for details.
+   - `strategy` — `:semi_naive` (default) or `:magic_sets`
+   - `goal` — `{relation_name, pattern}` used as the magic-sets goal
+     (when `strategy: :magic_sets`) and as a post-materialization filter
+     (default: `nil`). See `materialize/2` for details.
    - `explain` — enable provenance tracking (default: `false`)
 
   If `max_iterations` or `timeout_ms` is hit, the returned `Knowledge.t()`
@@ -193,7 +194,8 @@ defmodule ExDatalog do
 
   See `evaluate/2` for available options, plus:
 
-  - `:goal` — `{relation, pattern}` to filter results after materialization
+  - `:goal` — `{relation, pattern}` used both as the magic-sets goal
+    (when `strategy: :magic_sets`) and as a post-materialization filter
     (default: `nil`). When set, the knowledge base's `relations` map contains
     only the matching tuples for the specified relation. The pattern uses `:_`
     as a wildcard, matching `Knowledge.match/3`.
@@ -215,11 +217,11 @@ defmodule ExDatalog do
   def materialize(program, opts \\ [])
 
   def materialize(%Program{} = program, opts) do
-    {goal, eval_opts} = Keyword.pop(opts, :goal, nil)
+    goal = Keyword.get(opts, :goal, nil)
 
     with {:ok, validated} <- validate(program),
          {:ok, ir} <- ExDatalog.Compiler.compile(validated),
-         {:ok, knowledge} <- evaluate(ir, eval_opts) do
+         {:ok, knowledge} <- evaluate(ir, opts) do
       {:ok, apply_goal(knowledge, goal)}
     end
   end

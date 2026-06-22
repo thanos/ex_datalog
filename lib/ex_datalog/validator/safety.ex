@@ -265,12 +265,15 @@ defmodule ExDatalog.Validator.Safety do
   #   1. At most one aggregate per rule (initial v0.5.0 scope).
   #   2. An aggregate may not appear in a self-recursive rule (aggregates are
   #      non-monotone and must be stratified above their inputs).
+  #   3. The aggregate result variable must appear in the rule head, otherwise
+  #      the computed value is silently discarded during projection.
   defp check_aggregates(errors, %Rule{} = rule, rule_index) do
     aggregates = Rule.aggregate_constraints(rule)
 
     errors
     |> check_single_aggregate(aggregates, rule, rule_index)
     |> check_aggregate_not_recursive(aggregates, rule, rule_index)
+    |> check_aggregate_result_in_head(aggregates, rule, rule_index)
   end
 
   defp check_single_aggregate(errors, aggregates, _rule, rule_index) do
@@ -287,6 +290,31 @@ defmodule ExDatalog.Validator.Safety do
     else
       errors
     end
+  end
+
+  defp check_aggregate_result_in_head(errors, [], _rule, _rule_index), do: errors
+
+  defp check_aggregate_result_in_head(errors, aggregates, %Rule{} = rule, rule_index) do
+    head_vars = Rule.head_variables(rule)
+
+    Enum.reduce(aggregates, errors, fn agg, acc ->
+      result_var = Constraint.result_variable(agg)
+
+      if result_var && result_var not in head_vars do
+        [
+          Error.new(
+            :aggregate_result_not_in_head,
+            %{rule_index: rule_index, variable: result_var, op: agg.op},
+            "rule #{rule_index}: aggregate #{agg.op} result variable " <>
+              "#{inspect(result_var)} does not appear in the rule head; " <>
+              "the computed value would be silently discarded"
+          )
+          | acc
+        ]
+      else
+        acc
+      end
+    end)
   end
 
   defp check_aggregate_not_recursive(errors, [], _rule, _rule_index), do: errors

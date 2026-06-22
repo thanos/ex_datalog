@@ -39,6 +39,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Educational articles 06–09 (planner, aggregates, callbacks, magic sets) and a
   v0.4 → v0.5 migration guide.
 - Benchmark harness (`bench/`) and report (`chest/benchmarks/v0.5.0-report.md`).
+- **Runtime facts API** — `Schema.new/0` returns a blank program (relations +
+  rules, no compile-time facts). Pipe facts at runtime via
+  `Program.add_fact/2` (tuple form `{"rel", [values]}`) or
+  `Program.add_facts/2` (bulk). `Program.materialize/1,2` is a pipe-friendly
+  wrapper for `ExDatalog.materialize/2`. Generated relation constructors
+  (`Schema.emp(:alice, :eng)` -> `{"emp", [:alice, :eng]}`) bridge the DSL
+  to runtime data.
 
 ### Changed
 
@@ -53,8 +60,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Aggregates are integer-only; `avg` and float support are deferred to v0.6.0.
 - Magic sets is experimental and opt-in; the default strategy is unchanged.
-- All v0.4.1 tests continue to pass. Suite: 845 tests, 10 properties,
-  149 doctests, ~93% coverage.
+- All v0.4.1 tests continue to pass. Suite: 861 tests, 10 properties,
+  152 doctests, ~93% coverage.
 
 ## v0.4.1 (2026-06-21)
 

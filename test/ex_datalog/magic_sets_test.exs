@@ -113,6 +113,69 @@ defmodule ExDatalog.MagicSetsTest do
     end
   end
 
+  describe "public API exercises magic-sets transform" do
+    test "knowledge stats contain magic-prefixed relations when strategy is :magic_sets" do
+      program = ancestor_program(@chain)
+
+      {:ok, magic} =
+        ExDatalog.materialize(program, strategy: :magic_sets, goal: {"ancestor", [:a, :_]})
+
+      magic_rels =
+        magic.stats.relation_sizes
+        |> Map.keys()
+        |> Enum.filter(&String.starts_with?(&1, "magic_"))
+
+      assert magic_rels != [],
+             "expected magic-prefixed relations in stats, got: #{inspect(magic.stats.relation_sizes)}"
+    end
+
+    test "knowledge stats have no magic-prefixed relations for plain semi-naive" do
+      program = ancestor_program(@chain)
+
+      {:ok, full} = ExDatalog.materialize(program)
+
+      magic_rels =
+        full.stats.relation_sizes
+        |> Map.keys()
+        |> Enum.filter(&String.starts_with?(&1, "magic_"))
+
+      assert magic_rels == [],
+             "expected no magic-prefixed relations in semi-naive stats, got: #{inspect(full.stats.relation_sizes)}"
+    end
+
+    test "magic-sets restricts ancestor derivation to goal-reachable nodes" do
+      # Graph with two disconnected branches; goal queries only the first.
+      facts = [
+        {:a, :b},
+        {:b, :c},
+        {:c, :d},
+        {:x, :y},
+        {:y, :z}
+      ]
+
+      program = ancestor_program(facts)
+
+      {:ok, magic} =
+        ExDatalog.materialize(program, strategy: :magic_sets, goal: {"ancestor", [:a, :_]})
+
+      {:ok, full} = ExDatalog.materialize(program)
+
+      # Magic-sets ancestor table (before apply_goal filter) has only facts
+      # reachable from :a, while semi-naive computes all branches.
+      magic_ancestor = Knowledge.get(magic, "ancestor")
+      full_ancestor = Knowledge.get(full, "ancestor")
+
+      refute MapSet.member?(magic_ancestor, {:x, :y}),
+             "magic-sets should not derive {:x, :y} (unrelated to goal :a)"
+
+      assert MapSet.member?(full_ancestor, {:x, :y}),
+             "semi-naive should derive {:x, :y}"
+
+      assert MapSet.member?(magic_ancestor, {:a, :d}),
+             "magic-sets should derive {:a, :d} (goal-reachable)"
+    end
+  end
+
   describe "unsupported programs fall back" do
     test "program with negation falls back to semi-naive" do
       program =

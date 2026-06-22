@@ -642,7 +642,75 @@ true
 
 ---
 
-## 4. Query Planner
+## 4. Runtime Facts (Schema.new + Program.add_fact)
+
+For data-driven workflows where facts come from external sources at runtime,
+use `Schema.new/0` to get a blank program (relations + rules, no facts) and
+pipe facts in via `Program.add_fact/2`:
+
+```elixir
+defmodule DeptRuntimeCount do
+  use ExDatalog.Schema
+
+  relation :emp do
+    field(:name, :atom)
+    field(:dept, :atom)
+  end
+
+  relation :dept_count do
+    field(:dept, :atom)
+    field(:n, :integer)
+  end
+
+  rule dept_count(D, N) do
+    emp(E, D)
+    count(E, N)
+  end
+end
+
+program =
+  DeptRuntimeCount.new()
+  |> ExDatalog.Program.add_fact(DeptRuntimeCount.emp(:alice, :eng))
+  |> ExDatalog.Program.add_fact(DeptRuntimeCount.emp(:bob, :eng))
+  |> ExDatalog.Program.add_fact(DeptRuntimeCount.emp(:carol, :ops))
+
+{:ok, knowledge} = ExDatalog.Program.materialize(program)
+Knowledge.get(knowledge, "dept_count") |> MapSet.to_list() |> Enum.sort()
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+[eng: 2, ops: 1]
+```
+
+### Bulk add_facts
+
+```elixir
+facts = [
+  DeptRuntimeCount.emp(:dave, :eng),
+  DeptRuntimeCount.emp(:eve, :ops),
+  DeptRuntimeCount.emp(:frank, :eng)
+]
+
+program =
+  DeptRuntimeCount.new()
+  |> ExDatalog.Program.add_fact(DeptRuntimeCount.emp(:alice, :eng))
+  |> ExDatalog.Program.add_facts(facts)
+
+{:ok, knowledge} = ExDatalog.Program.materialize(program)
+Knowledge.get(knowledge, "dept_count") |> MapSet.to_list() |> Enum.sort()
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+[eng: 3, ops: 1]
+```
+
+---
+
+## 5. Query Planner
 
 The planner sits between the compiled IR and the evaluation engine. It produces
 an `ExDatalog.Planner.Plan` describing the chosen `strategy`, `strata`, `joins`,
@@ -750,7 +818,7 @@ IO.puts(Planner.explain_plan(AdultOnly.program()))
 Strategy: semi_naive
   Stratum 0: 1 rule(s), relations: adult, person
 Joins: 1
-Predicates: 0
+Predicates: 1 (callback)
 ```
 
 <!-- livebook:{"output":true} -->

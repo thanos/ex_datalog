@@ -85,22 +85,34 @@ defmodule ExDatalog.MagicSets do
 
     seed_fact = seed_fact(magic_rel, goal_relation, goal_pattern)
 
-    rewritten_rules =
+    # Next available rule ID for supplementary rules
+    max_rule_id = ir.rules |> Enum.map(& &1.id) |> Enum.max(fn -> 0 end)
+    next_id = max_rule_id + 1
+
+    {rewritten_rules, supplementary_rules, _final_id} =
       ir.rules
-      |> Enum.map(fn rule -> rewrite_rule(rule, goal_relation, magic_rel, bound_positions) end)
+      |> Enum.reduce({[], [], next_id}, fn rule, {rr, sr, id} ->
+        {new_rr, new_srs, new_id} =
+          rewrite_rule(rule, goal_relation, magic_rel, bound_positions, id)
+
+        {[new_rr | rr], new_srs ++ sr, new_id}
+      end)
+
+    all_rules = Enum.reverse(rewritten_rules) ++ supplementary_rules
 
     new_relations = [magic_relation | ir.relations]
     new_facts = if seed_fact, do: [seed_fact | ir.facts], else: ir.facts
 
     # Recompute strata: the magic relation joins the goal relation's stratum.
-    new_strata = inject_magic_into_strata(ir.strata, goal_relation, magic_rel)
+    new_strata =
+      inject_magic_into_strata(ir.strata, goal_relation, magic_rel, supplementary_rules)
 
     {:ok,
      %IR{
        ir
        | relations: new_relations,
          facts: new_facts,
-         rules: rewritten_rules,
+         rules: all_rules,
          strata: new_strata
      }}
   end
@@ -153,32 +165,67 @@ defmodule ExDatalog.MagicSets do
   defp to_ir_value(v) when is_atom(v), do: {:atom, v}
 
   # Rewrite a rule whose head is the goal relation: prepend the magic predicate
-  # binding the bound head positions, so derivation is demand-restricted. The
-  # magic atom projects exactly the goal's bound positions of the head, so its
-  # arity matches the magic relation.
+  # binding the bound head positions, so derivation is demand-restricted. Also
+  # generate supplementary magic rules that propagate demand to recursive body
+  # atoms referencing the goal relation.
   defp rewrite_rule(
          %IR.Rule{head: %IR.Atom{relation: rel} = head} = rule,
          goal_relation,
          magic_rel,
-         bound_positions
+         bound_positions,
+         next_id
        )
        when rel == goal_relation do
     magic_terms = bound_head_terms(head, bound_positions)
     magic_atom = %IR.Atom{relation: magic_rel, terms: magic_terms}
-    %IR.Rule{rule | body: [{:positive, magic_atom} | rule.body]}
+    rewritten = %IR.Rule{rule | body: [{:positive, magic_atom} | rule.body]}
+
+    supplementary =
+      rule.body
+      |> Enum.with_index()
+      |> Enum.filter(fn
+        {{:positive, %IR.Atom{relation: ^goal_relation}}, _idx} -> true
+        _ -> false
+      end)
+      |> Enum.map(fn {{:positive, body_atom}, idx} ->
+        prefix_body = Enum.take(rule.body, idx)
+        body_magic_terms = bound_head_terms(body_atom, bound_positions)
+
+        sup_rule = %IR.Rule{
+          id: next_id,
+          head: %IR.Atom{relation: magic_rel, terms: body_magic_terms},
+          body: [{:positive, magic_atom} | prefix_body],
+          stratum: rule.stratum
+        }
+
+        {sup_rule, next_id}
+      end)
+      |> Enum.map(fn {sup_rule, _id} -> sup_rule end)
+
+    final_id = next_id + length(supplementary)
+
+    {rewritten, supplementary, final_id}
   end
 
-  defp rewrite_rule(rule, _goal_relation, _magic_rel, _bound_positions), do: rule
+  defp rewrite_rule(rule, _goal_relation, _magic_rel, _bound_positions, next_id) do
+    {rule, [], next_id}
+  end
 
   defp bound_head_terms(%IR.Atom{terms: terms}, bound_positions) do
     bound_positions
     |> Enum.map(fn pos -> Enum.at(terms, pos) end)
   end
 
-  defp inject_magic_into_strata(strata, goal_relation, magic_rel) do
-    Enum.map(strata, fn %IR.Stratum{relations: rels} = stratum ->
+  defp inject_magic_into_strata(strata, goal_relation, magic_rel, supplementary_rules) do
+    sup_rule_ids = Enum.map(supplementary_rules, & &1.id)
+
+    Enum.map(strata, fn %IR.Stratum{relations: rels, rule_ids: rule_ids} = stratum ->
       if goal_relation in rels do
-        %IR.Stratum{stratum | relations: [magic_rel | rels]}
+        %IR.Stratum{
+          stratum
+          | relations: [magic_rel | rels],
+            rule_ids: rule_ids ++ sup_rule_ids
+        }
       else
         stratum
       end

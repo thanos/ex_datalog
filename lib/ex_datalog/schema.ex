@@ -25,8 +25,8 @@ defmodule ExDatalog.Schema do
   An Ecto-inspired DSL for defining Datalog programs.
 
   `use ExDatalog.Schema` in a module to declare relations, facts, rules,
-  and queries. The module then exposes `program/0`, `materialize/0,1`,
-  and `query/2` functions.
+  and queries. The module then exposes `program/0`, `new/0`,
+  `materialize/0,1`, and `query/2` functions.
 
   ## Example
 
@@ -128,15 +128,37 @@ defmodule ExDatalog.Schema do
   Queries operate on materialized knowledge and use `Knowledge.match/3`
   internally.
 
-  ## Aggregate Syntax (Preview)
+  ## Aggregate Syntax
 
-  Aggregates are not yet supported. Using `agg(...)` in a rule head or
-  body raises `ExDatalog.DSL.CompileError` at compile time:
+  Aggregates (`count`, `sum`, `min`, `max`) are used in rule bodies as
+  named predicates. The result variable must appear in the rule head:
 
-      rule employee_count(dept, agg(:count, emp)) do
-        employee(emp, dept)
+      rule dept_count(D, N) do
+        emp(E, D)
+        count(E, N)
       end
-      #=> ** (ExDatalog.DSL.CompileError) aggregates are not yet supported (planned for v0.6.0)
+
+  Aggregate inputs are integer-only. A rule may contain at most one
+  aggregate, and aggregates may not appear in recursive rules.
+
+  ## BEAM Callback Predicates
+
+  Call deterministic Elixir functions from rule bodies:
+
+      predicate :adult?, AgeChecker, :adult?, [:integer], :boolean
+
+      rule active_user(U) do
+        user(U, Age)
+        adult?(Age)
+      end
+
+  Value-returning callbacks bind a result variable:
+
+      predicate :double, Math, :double, [:integer], :value
+
+  Callbacks run in isolated, monitored processes with configurable
+  timeout (`:callback_timeout_ms`, default 100ms). Timeouts and exceptions
+  filter the binding.
 
   ## Backward Compatibility
 
@@ -219,14 +241,16 @@ defmodule ExDatalog.Schema do
       Enum.map(relations, fn rel ->
         name = rel.name
         arity = length(rel.fields)
-        args = for i <- 1..arity, do: Macro.var(:"arg_#{i}", __MODULE__)
+        args = for i <- 1..arity//1, do: Macro.var(:"arg_#{i}", __MODULE__)
+
+        arg_names = Enum.map_join(1..arity//1, ", ", fn i -> "arg_#{i}" end)
 
         quote do
           @doc """
           Constructs a fact tuple for the `#{unquote(name)}` relation.
 
-              #{unquote(name)}(#{Enum.map_join(1..unquote(arity), ", ", fn i -> "arg_#{i}" end)})
-              #=> {"#{unquote(name)}", [#{Enum.map_join(1..unquote(arity), ", ", fn i -> "arg_#{i}" end)})]}
+              #{unquote(name)}(#{unquote(arg_names)})
+              #=> {"#{unquote(name)}", [#{unquote(arg_names)}]}
 
           Pass the result to `Program.add_fact/2` as a fact tuple.
           """
@@ -246,7 +270,7 @@ defmodule ExDatalog.Schema do
       compile-time facts, and rules.
 
       Use this when all facts are declared at compile time via `fact/1`.
-      For runtime facts, use `new_program/0` and `Program.add_fact/2`.
+      For runtime facts, use `new/0` and `Program.add_fact/2`.
       """
       @spec program() :: ExDatalog.Program.t()
       def program do
@@ -986,15 +1010,17 @@ defmodule ExDatalog.Schema do
   - `name` — the predicate name used in rule bodies.
   - `module` / `function` — the Elixir function to call.
   - `arg_types` — declared argument types (currently informational; their
-    length sets the callback arity, validated at compile time).
+    length sets the callback arity).
   - `return_type` — `:boolean` (filter) or `:value` (binds the last argument
     position as the result variable).
 
   For `:value` predicates, the **last** argument in the rule-body call is the
   result variable; the remaining arguments are passed to the function.
 
-  The referenced `module.function` must be defined and exported with arity
-  matching the inputs, or a compile-time `ExDatalog.DSL.CompileError` is raised.
+  The referenced `module.function` is called at evaluation time in an
+  isolated, monitored process. A `:callback_timeout_ms` option
+  (default 100ms) applies to each call; timeouts and exceptions filter
+  the binding.
   """
   defmacro predicate(name, module, function, arg_types, return_type) do
     quote do

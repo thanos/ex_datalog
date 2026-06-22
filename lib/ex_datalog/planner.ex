@@ -166,12 +166,26 @@ defmodule ExDatalog.Planner do
   defp build_predicates(%IR{rules: rules}) do
     rules
     |> Enum.flat_map(fn rule ->
-      for {:constraint, c} <- rule.body, do: classify_constraint(c)
+      rule.body
+      |> Enum.map(fn
+        {:constraint, c} -> classify_constraint(c)
+        {:callback, cb} -> classify_callback(cb)
+        _ -> nil
+      end)
+      |> Enum.reject(&is_nil/1)
     end)
   end
 
   defp classify_constraint(%IR.Constraint{op: op} = c) do
     %Predicate{kind: constraint_kind(op), op: op, metadata: %{result: c.result}}
+  end
+
+  defp classify_callback(%IR.Callback{} = cb) do
+    %Predicate{
+      kind: :callback,
+      op: :callback,
+      metadata: %{module: cb.module, function: cb.function, result: cb.result}
+    }
   end
 
   defp constraint_kind(op) do

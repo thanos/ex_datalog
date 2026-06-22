@@ -8,8 +8,9 @@ defmodule ExDatalog.Constraints.BeamCallback do
 
   The engine enforces only:
 
-  - **Timeout** — the call runs in a `Task` with a configurable timeout
-    (`:callback_timeout_ms`, default 100ms). A timeout filters the binding.
+  - **Timeout** — the call runs in a `spawn_monitor`-ed process with a
+    configurable timeout (`:callback_timeout_ms`, default 100ms). A timeout
+    filters the binding. Late result messages are flushed from the mailbox.
   - **Exception isolation** — a raised exception filters the binding.
 
   Boolean callbacks (`result: nil`) act as filters: `true` keeps the binding,
@@ -65,6 +66,14 @@ defmodule ExDatalog.Constraints.BeamCallback do
 
   defp bind_result(binding, {:var, name}, value), do: Map.put(binding, name, value)
 
+  defp flushlate(ref) do
+    receive do
+      {^ref, _} -> flushlate(ref)
+    after
+      0 -> :ok
+    end
+  end
+
   # Run the callback in an unlinked, monitored process so that a raise or
   # exit inside the callback does not propagate to (or kill) the evaluator.
   # A crash or timeout is reported as `{:error, _}` and filters the binding.
@@ -97,6 +106,7 @@ defmodule ExDatalog.Constraints.BeamCallback do
       timeout_ms ->
         Process.exit(pid, :kill)
         Process.demonitor(monitor_ref, [:flush])
+        flushlate(ref)
         {:error, :timeout}
     end
   end

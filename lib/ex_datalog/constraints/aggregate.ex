@@ -56,7 +56,34 @@ defmodule ExDatalog.Constraints.Aggregate do
   end
 
   defp compute(:count, values), do: length(values)
-  defp compute(:sum, values), do: Enum.sum(values)
-  defp compute(:min, values), do: Enum.min(values)
-  defp compute(:max, values), do: Enum.max(values)
+  defp compute(:sum, values), do: reduce_sum(values)
+  defp compute(:min, values), do: reduce_min(values)
+  defp compute(:max, values), do: reduce_max(values)
+
+  defp reduce_sum(values) do
+    Enum.reduce(values, 0, fn
+      v, acc when is_integer(v) -> acc + v
+      v, _acc -> raise ArgumentError, "sum aggregate requires integer inputs, got: #{inspect(v)}"
+    end)
+  end
+
+  defp reduce_min([]), do: raise(ArgumentError, "min aggregate called on empty group")
+
+  defp reduce_min(values) do
+    Enum.reduce(values, nil, fn
+      v, nil when is_integer(v) -> v
+      v, acc when is_integer(v) -> min(v, acc)
+      v, _acc -> raise(ArgumentError, "min aggregate requires integer inputs, got: #{inspect(v)}")
+    end)
+  end
+
+  defp reduce_max([]), do: raise(ArgumentError, "max aggregate called on empty group")
+
+  defp reduce_max(values) do
+    Enum.reduce(values, nil, fn
+      v, nil when is_integer(v) -> v
+      v, acc when is_integer(v) -> max(v, acc)
+      v, _acc -> raise(ArgumentError, "max aggregate requires integer inputs, got: #{inspect(v)}")
+    end)
+  end
 end

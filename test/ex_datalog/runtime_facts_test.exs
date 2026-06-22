@@ -161,6 +161,33 @@ defmodule ExDatalog.RuntimeFactsTest do
                ])
     end
 
+    test "returns error and does not modify original program on failure" do
+      prog = Program.new() |> Program.add_relation("emp", [:atom, :atom])
+
+      result = Program.add_facts(prog, [{"emp", [:alice, :eng]}, {"unknown", [:x]}])
+
+      assert {:error, _} = result
+      assert prog.facts == []
+    end
+
+    test "propagates error through pipe chain" do
+      prog = Program.new() |> Program.add_relation("emp", [:atom, :atom])
+
+      result =
+        prog
+        |> Program.add_facts([{"unknown", [:x]}])
+        |> Program.add_fact({"emp", [:alice, :eng]})
+        |> Program.materialize()
+
+      assert {:error, _} = result
+    end
+
+    test "handles empty list" do
+      prog = Program.new() |> Program.add_relation("emp", [:atom, :atom])
+      result = Program.add_facts(prog, [])
+      assert result.facts == []
+    end
+
     test "pipeable with schema constructors" do
       defmodule BulkSchema do
         use ExDatalog.Schema
