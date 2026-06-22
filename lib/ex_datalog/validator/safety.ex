@@ -99,13 +99,41 @@ defmodule ExDatalog.Validator.Safety do
       |> check_wildcards_in_head(rule, rule_index)
       |> check_unsafe_head_variables(head_vars, head_bound, rule_index)
       |> check_unbound_constraint_variables(rule, body_bound, rule_index)
+      |> check_aggregates(rule, rule_index)
+      |> check_callback_inputs(rule, body_bound, rule_index)
     else
       []
     end
   end
 
+  # Callback input variables must be bound by positive body atoms. Callbacks
+  # are filters (boolean) or value-binders; their inputs cannot be introduced
+  # by the callback itself.
+  defp check_callback_inputs(errors, %Rule{body: body}, body_bound, rule_index) do
+    callbacks = for {:callback, cb} <- body, do: cb
+
+    Enum.reduce(callbacks, errors, fn cb, acc ->
+      unbound = Enum.reject(ExDatalog.Callback.input_variables(cb), fn v -> v in body_bound end)
+
+      if unbound == [] do
+        acc
+      else
+        [
+          Error.new(
+            :unbound_constraint_variable,
+            %{rule_index: rule_index, variables: unbound, callback: {cb.module, cb.function}},
+            "rule #{rule_index}: callback #{inspect(cb.module)}.#{cb.function} " <>
+              "references unbound variable(s) #{Enum.join(unbound, ", ")}"
+          )
+          | acc
+        ]
+      end
+    end)
+  end
+
   defp valid_literal?({:positive, %Atom{}}), do: true
   defp valid_literal?({:negative, %Atom{}}), do: true
+  defp valid_literal?({:callback, %ExDatalog.Callback{}}), do: true
   defp valid_literal?(_), do: false
 
   # --- Private helpers ---
@@ -126,13 +154,21 @@ defmodule ExDatalog.Validator.Safety do
   # Used for head-variable safety: if the rule body evaluates at all, every
   # arithmetic constraint will have computed its result, so arithmetic results
   # are in scope for the head regardless of constraint ordering.
-  defp all_bound_variables(%Rule{constraints: constraints} = rule) do
-    arithmetic_result_vars =
+  defp all_bound_variables(%Rule{constraints: constraints, body: body} = rule) do
+    result_vars =
       Enum.flat_map(constraints, fn c ->
-        if Constraint.arithmetic?(c), do: [Constraint.result_variable(c)], else: []
+        if Constraint.arithmetic?(c) or Constraint.aggregate?(c),
+          do: [Constraint.result_variable(c)],
+          else: []
       end)
 
-    (positive_body_variables(rule) ++ arithmetic_result_vars) |> Enum.uniq()
+    callback_result_vars =
+      for {:callback, cb} <- body,
+          name = ExDatalog.Callback.result_variable(cb),
+          name != nil,
+          do: name
+
+    (positive_body_variables(rule) ++ result_vars ++ callback_result_vars) |> Enum.uniq()
   end
 
   defp check_wildcards_in_head(errors, %Rule{head: head}, rule_index) do
@@ -210,10 +246,10 @@ defmodule ExDatalog.Validator.Safety do
         ]
       end
 
-    # Arithmetic constraints extend the bound set with their result variable
-    # so that subsequent constraints may reference it.
+    # Arithmetic and aggregate constraints extend the bound set with their
+    # result variable so that subsequent constraints may reference it.
     new_bound =
-      if Constraint.arithmetic?(c) do
+      if Constraint.arithmetic?(c) or Constraint.aggregate?(c) do
         case Constraint.result_variable(c) do
           nil -> bound
           var -> Enum.uniq([var | bound])
@@ -223,5 +259,88 @@ defmodule ExDatalog.Validator.Safety do
       end
 
     {new_errors, new_bound}
+  end
+
+  # Aggregate-specific safety:
+  #   1. At most one aggregate per rule (initial v0.5.0 scope).
+  #   2. An aggregate may not appear in a self-recursive rule (aggregates are
+  #      non-monotone and must be stratified above their inputs).
+  #   3. The aggregate result variable must appear in the rule head, otherwise
+  #      the computed value is silently discarded during projection.
+  defp check_aggregates(errors, %Rule{} = rule, rule_index) do
+    aggregates = Rule.aggregate_constraints(rule)
+
+    errors
+    |> check_single_aggregate(aggregates, rule, rule_index)
+    |> check_aggregate_not_recursive(aggregates, rule, rule_index)
+    |> check_aggregate_result_in_head(aggregates, rule, rule_index)
+  end
+
+  defp check_single_aggregate(errors, aggregates, _rule, rule_index) do
+    if length(aggregates) > 1 do
+      [
+        Error.new(
+          :multiple_aggregates,
+          %{rule_index: rule_index, count: length(aggregates)},
+          "rule #{rule_index}: a rule may contain at most one aggregate " <>
+            "(found #{length(aggregates)}); split into separate rules"
+        )
+        | errors
+      ]
+    else
+      errors
+    end
+  end
+
+  defp check_aggregate_result_in_head(errors, [], _rule, _rule_index), do: errors
+
+  defp check_aggregate_result_in_head(errors, aggregates, %Rule{} = rule, rule_index) do
+    head_vars = Rule.head_variables(rule)
+
+    Enum.reduce(aggregates, errors, fn agg, acc ->
+      result_var = Constraint.result_variable(agg)
+
+      if result_var && result_var not in head_vars do
+        [
+          Error.new(
+            :aggregate_result_not_in_head,
+            %{rule_index: rule_index, variable: result_var, op: agg.op},
+            "rule #{rule_index}: aggregate #{agg.op} result variable " <>
+              "#{inspect(result_var)} does not appear in the rule head; " <>
+              "the computed value would be silently discarded"
+          )
+          | acc
+        ]
+      else
+        acc
+      end
+    end)
+  end
+
+  defp check_aggregate_not_recursive(errors, [], _rule, _rule_index), do: errors
+
+  defp check_aggregate_not_recursive(errors, _aggregates, %Rule{} = rule, rule_index) do
+    head_rel = rule.head.relation
+
+    self_recursive? =
+      Enum.any?(rule.body, fn
+        {:positive, %Atom{relation: ^head_rel}} -> true
+        {:negative, %Atom{relation: ^head_rel}} -> true
+        _ -> false
+      end)
+
+    if self_recursive? do
+      [
+        Error.new(
+          :aggregate_in_recursion,
+          %{rule_index: rule_index, relation: head_rel},
+          "rule #{rule_index}: aggregate over a self-recursive relation " <>
+            "#{inspect(head_rel)} is not allowed; aggregates are non-monotone"
+        )
+        | errors
+      ]
+    else
+      errors
+    end
   end
 end

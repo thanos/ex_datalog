@@ -49,10 +49,18 @@ defmodule ExDatalog.IR do
           result: ir_term() | nil
         }
 
+  @type ir_callback :: %ExDatalog.IR.Callback{
+          module: module(),
+          function: atom(),
+          args: [ir_term()],
+          result: ir_term() | nil
+        }
+
   @type ir_literal ::
           {:positive, ExDatalog.IR.Atom.t()}
           | {:negative, ExDatalog.IR.Atom.t()}
           | {:constraint, ir_constraint()}
+          | {:callback, ir_callback()}
 
   defmodule Relation do
     @moduledoc """
@@ -139,6 +147,31 @@ defmodule ExDatalog.IR do
     end
   end
 
+  defmodule Callback do
+    @moduledoc """
+    An IR callback predicate: an Elixir function invoked during evaluation.
+
+    `args` are IR terms resolved by variable name against the binding at
+    evaluation time. `result` is `nil` for boolean (filter) callbacks, or
+    `{:var, name}` for value-returning callbacks that bind a result variable.
+    """
+
+    @enforce_keys [:module, :function, :args]
+    defstruct [:module, :function, :args, :result]
+
+    @type t :: %__MODULE__{
+            module: module(),
+            function: atom(),
+            args: [ExDatalog.IR.ir_term()],
+            result: ExDatalog.IR.ir_term() | nil
+          }
+
+    @spec serialize(t()) :: map()
+    def serialize(%__MODULE__{module: m, function: f, args: args, result: result}) do
+      %{module: m, function: f, args: args, result: result}
+    end
+  end
+
   defmodule Rule do
     @moduledoc """
     An IR rule: a head atom, a body of literals, an assigned stratum, and
@@ -177,6 +210,9 @@ defmodule ExDatalog.IR do
 
             {:constraint, c} ->
               %{kind: :constraint, constraint: Constraint.serialize(c)}
+
+            {:callback, cb} ->
+              %{kind: :callback, callback: Callback.serialize(cb)}
           end),
         stratum: stratum,
         metadata: metadata
@@ -300,6 +336,19 @@ defmodule ExDatalog.IR do
   @spec from_atom(ExDatalog.Atom.t()) :: Atom.t()
   def from_atom(%ExDatalog.Atom{relation: relation, terms: terms}) do
     %Atom{relation: relation, terms: Enum.map(terms, &from_term/1)}
+  end
+
+  @doc """
+  Converts an AST callback to an IR callback.
+  """
+  @spec from_callback(ExDatalog.Callback.t()) :: Callback.t()
+  def from_callback(%ExDatalog.Callback{module: m, function: f, args: args, result: result}) do
+    %Callback{
+      module: m,
+      function: f,
+      args: Enum.map(args, &from_term/1),
+      result: maybe_from_term(result)
+    }
   end
 
   @doc """

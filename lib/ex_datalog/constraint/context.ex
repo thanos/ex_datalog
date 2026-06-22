@@ -21,11 +21,13 @@ defmodule ExDatalog.Constraint.Context do
 
   @type t :: %__MODULE__{
           capabilities: Capabilities.t(),
-          provenance: boolean()
+          provenance: boolean(),
+          opts: keyword()
         }
 
   defstruct capabilities: %Capabilities{},
-            provenance: false
+            provenance: false,
+            opts: []
 
   @doc """
   Creates a new context with default capabilities.

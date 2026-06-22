@@ -5,6 +5,64 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.5.0 (2026-06-21)
+
+### Added
+
+- **Query Planner** (`ExDatalog.Planner`) — a thin planning layer between the
+  compiled IR and the engine. `plan/2` produces an `ExDatalog.Planner.Plan`
+  (strategy, strata, joins, predicates); `explain_plan/1,2` renders a
+  human-readable plan. Emits `[:ex_datalog, :planner, :start|:stop|:exception]`
+  telemetry.
+- **Aggregates** — `count`, `sum`, `min`, `max` in rule bodies, via the DSL
+  (`count(X, N)`) or the builder API (`Constraint.count/2`, `from_tuple({:count,
+  X, N})`, `add_rule/4`). Aggregates group surviving bindings by the head
+  variables other than the result, reduce each group, and are stratified
+  strictly above their source relations. Integer-only; one aggregate per rule.
+- **BEAM callback predicates** — call deterministic, side-effect-free Elixir
+  functions from rule bodies. DSL: `predicate :name, Module, :fun, [types],
+  :boolean | :value`. Builder: `ExDatalog.Callback` literals in a rule body.
+  Boolean callbacks filter; `:value` callbacks bind a result variable. The
+  engine isolates callbacks with a configurable timeout
+  (`:callback_timeout_ms`, default 100ms) and rescues exceptions — a
+  timeout/raise filters the binding.
+- **Magic sets** (experimental) — demand-driven evaluation via
+  `materialize(program, strategy: :magic_sets, goal: {relation, pattern})`. The
+  IR is rewritten to compute only facts relevant to the goal. Supports positive
+  recursive programs with ground bound positions; unsupported programs fall back
+  to semi-naive evaluation (never producing incorrect results).
+- `ExDatalog.Callback` and `ExDatalog.IR.Callback` for callback predicates.
+- `ExDatalog.Constraints.Aggregate` and `ExDatalog.Constraints.BeamCallback`.
+- `Capabilities` gains `aggregate_constraints` and `beam_callbacks` fields.
+- `Constraint.Context` gains an `opts` field (threads evaluation options such
+  as `callback_timeout_ms`).
+- Educational articles 06–09 (planner, aggregates, callbacks, magic sets) and a
+  v0.4 → v0.5 migration guide.
+- Benchmark harness (`bench/`) and report (`chest/benchmarks/v0.5.0-report.md`).
+- **Runtime facts API** — `Schema.new/0` returns a blank program (relations +
+  rules, no compile-time facts). Pipe facts at runtime via
+  `Program.add_fact/2` (tuple form `{"rel", [values]}`) or
+  `Program.add_facts/2` (bulk). `Program.materialize/1,2` is a pipe-friendly
+  wrapper for `ExDatalog.materialize/2`. Generated relation constructors
+  (`Schema.emp(:alice, :eng)` -> `{"emp", [:alice, :eng]}`) bridge the DSL
+  to runtime data.
+
+### Changed
+
+- Version bumped from 0.4.1 to 0.5.0.
+- `Engine.Naive.evaluate/2` dispatches on a `:strategy` option (`:semi_naive`
+  default, or `:magic_sets`).
+- `Engine.Naive` stratification validation now also rejects aggregate rules
+  whose source relations are not in a strictly lower stratum.
+- The `agg(...)` placeholder now points users to `count/sum/min/max`.
+
+### Notes
+
+- Aggregates are integer-only; `avg` and float support are deferred to v0.6.0.
+- Magic sets is experimental and opt-in; the default strategy is unchanged.
+- All v0.4.1 tests continue to pass. Suite: 871 tests, 10 properties,
+  152 doctests, ~93% coverage.
+
 ## v0.4.1 (2026-06-21)
 
 ### Fixed

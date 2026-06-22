@@ -21,6 +21,10 @@ defmodule ExDatalog.Validator.Error do
   | `:unstratified_negation` | 2 | A negative edge appears in a dependency cycle |
   | `:unbound_constraint_variable` | 2 | A constraint references a variable not yet bound |
   | `:invalid_body_literal` | 1 | A body literal is not `{:positive, atom}` or `{:negative, atom}` |
+  | `:multiple_aggregates` | 2 | A rule contains more than one aggregate constraint |
+  | `:aggregate_in_recursion` | 2 | An aggregate appears in a self-recursive rule |
+  | `:unstratified_aggregate` | 2 | An aggregate's input relation is not in a strictly lower stratum |
+  | `:invalid_callback` | 2 | A callback references a missing module/function or wrong arity |
 
   ## Examples
 
@@ -44,6 +48,10 @@ defmodule ExDatalog.Validator.Error do
           | :unbound_constraint_variable
           | :invalid_body_literal
           | :wildcard_in_head
+          | :multiple_aggregates
+          | :aggregate_in_recursion
+          | :unstratified_aggregate
+          | :invalid_callback
 
   @type t :: %__MODULE__{
           kind: kind(),

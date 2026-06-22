@@ -237,6 +237,73 @@ defmodule ExDatalog.Program do
   def add_fact({:error, _} = err, _relation, _values), do: err
 
   @doc """
+  Adds a fact to the program from a `{relation, values}` tuple.
+
+  This is the tuple form produced by Schema relation constructors
+  (e.g., `MySchema.emp(:alice, :eng)` returns `{"emp", [:alice, :eng]}`).
+
+  ## Examples
+
+      iex> alias ExDatalog.Program
+      iex> program = Program.new() |> Program.add_relation("emp", [:atom, :atom])
+      iex> program = Program.add_fact(program, {"emp", [:alice, :eng]})
+      iex> program.facts
+      [{"emp", [:alice, :eng]}]
+  """
+  @spec add_fact(t(), {String.t(), [term()]}) :: t() | {:error, term()}
+  def add_fact(program, {relation, values}) when is_binary(relation) and is_list(values) do
+    add_fact(program, relation, values)
+  end
+
+  def add_fact({:error, _} = err, {_relation, _values}), do: err
+
+  @doc """
+  Adds multiple facts to the program from a list of `{relation, values}` tuples.
+
+  ## Examples
+
+      iex> alias ExDatalog.Program
+      iex> program = Program.new() |> Program.add_relation("emp", [:atom, :atom])
+      iex> facts = [{"emp", [:alice, :eng]}, {"emp", [:bob, :eng]}]
+      iex> program = Program.add_facts(program, facts)
+      iex> length(program.facts)
+      2
+  """
+  @spec add_facts(t(), [{String.t(), [term()]}]) :: t() | {:error, term()}
+  def add_facts(program, facts) when is_list(facts) do
+    Enum.reduce_while(facts, program, fn fact, acc ->
+      case add_fact(acc, fact) do
+        {:error, _} = err -> {:halt, err}
+        prog -> {:cont, prog}
+      end
+    end)
+  end
+
+  def add_facts({:error, _} = err, _facts), do: err
+
+  @doc """
+  Materializes the program. A pipe-friendly convenience for
+  `ExDatalog.materialize/2`.
+
+  ## Examples
+
+      iex> alias ExDatalog.{Program, Knowledge}
+      iex> program = Program.new() |> Program.add_relation("edge", [:atom, :atom])
+      iex> program = program |> Program.add_fact("edge", [:a, :b])
+      iex> {:ok, knowledge} = Program.materialize(program)
+      iex> Knowledge.get(knowledge, "edge") |> MapSet.to_list()
+      [{:a, :b}]
+  """
+  @spec materialize(t(), keyword()) :: {:ok, ExDatalog.Knowledge.t()} | {:error, term()}
+  def materialize(program, opts \\ [])
+
+  def materialize(%__MODULE__{} = program, opts) do
+    ExDatalog.materialize(program, opts)
+  end
+
+  def materialize({:error, _} = err, _opts), do: err
+
+  @doc """
   Adds a rule to the program.
 
   Performs structural validation:
@@ -431,17 +498,18 @@ defmodule ExDatalog.Program do
 
   defp validate_body(program, body) do
     Enum.reduce_while(body, :ok, fn literal, :ok ->
-      atom =
-        case literal do
-          {:positive, a} -> a
-          {:negative, a} -> a
-          other -> {:error, "invalid body literal #{inspect(other)}"}
-        end
+      case literal do
+        {:callback, %ExDatalog.Callback{}} ->
+          {:cont, :ok}
 
-      case atom do
-        {:error, _} = err -> {:halt, err}
-        %Atom{} -> {:cont, validate_atom(program, atom)}
-        _ -> {:halt, {:error, "invalid body literal #{inspect(literal)}"}}
+        {:positive, %Atom{} = a} ->
+          {:cont, validate_atom(program, a)}
+
+        {:negative, %Atom{} = a} ->
+          {:cont, validate_atom(program, a)}
+
+        other ->
+          {:halt, {:error, "invalid body literal #{inspect(other)}"}}
       end
     end)
   end

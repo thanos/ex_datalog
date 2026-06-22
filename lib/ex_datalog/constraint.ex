@@ -119,7 +119,9 @@ defmodule ExDatalog.Constraint do
   @type_ops [:is_integer, :is_binary, :is_atom]
   @string_ops [:starts_with, :contains]
   @membership_ops [:member]
-  @all_ops @comparison_ops ++ @arithmetic_ops ++ @type_ops ++ @string_ops ++ @membership_ops
+  @aggregate_ops [:count, :sum, :min, :max]
+  @all_ops @comparison_ops ++
+             @arithmetic_ops ++ @type_ops ++ @string_ops ++ @membership_ops ++ @aggregate_ops
 
   @type op ::
           :gt
@@ -138,6 +140,10 @@ defmodule ExDatalog.Constraint do
           | :starts_with
           | :contains
           | :member
+          | :count
+          | :sum
+          | :min
+          | :max
 
   @type comparison :: %__MODULE__{
           op: :gt | :lt | :gte | :lte | :eq | :neq,
@@ -174,7 +180,20 @@ defmodule ExDatalog.Constraint do
           result: nil
         }
 
-  @type t :: comparison() | arithmetic() | type_predicate() | string_predicate() | membership()
+  @type aggregate :: %__MODULE__{
+          op: :count | :sum | :min | :max,
+          left: Term.t(),
+          right: nil,
+          result: {:var, String.t()}
+        }
+
+  @type t ::
+          comparison()
+          | arithmetic()
+          | type_predicate()
+          | string_predicate()
+          | membership()
+          | aggregate()
 
   defstruct [:op, :left, :right, :result]
 
@@ -402,6 +421,64 @@ defmodule ExDatalog.Constraint do
   @spec member(Term.t(), Term.t()) :: t()
   def member(left, right), do: filter(:member, left, right)
 
+  # --- Aggregate constructors ---
+
+  @doc """
+  Constructs a `count` aggregate: `result = count of input within each group`.
+
+  Aggregates group the rule's surviving bindings by the head variables other
+  than `result`, then reduce the `input` variable's values within each group.
+  Aggregates are integer-only and must appear in a stratum strictly above the
+  relations that bind their inputs.
+
+  ## Examples
+
+      iex> ExDatalog.Constraint.count({:var, "Emp"}, {:var, "N"})
+      %ExDatalog.Constraint{op: :count, left: {:var, "Emp"}, right: nil, result: {:var, "N"}}
+
+  """
+  @spec count(Term.t(), Term.t()) :: t()
+  def count(input, result), do: aggregate(:count, input, result)
+
+  @doc """
+  Constructs a `sum` aggregate: `result = integer sum of input within each group`.
+
+  Inputs must be integers; a non-integer input raises `ArgumentError` at
+  reduction time.
+
+  ## Examples
+
+      iex> ExDatalog.Constraint.sum({:var, "Amount"}, {:var, "Total"})
+      %ExDatalog.Constraint{op: :sum, left: {:var, "Amount"}, right: nil, result: {:var, "Total"}}
+
+  """
+  @spec sum(Term.t(), Term.t()) :: t()
+  def sum(input, result), do: aggregate(:sum, input, result)
+
+  @doc """
+  Constructs a `min` aggregate: `result = minimum of input within each group`.
+
+  ## Examples
+
+      iex> ExDatalog.Constraint.min({:var, "Score"}, {:var, "Lowest"})
+      %ExDatalog.Constraint{op: :min, left: {:var, "Score"}, right: nil, result: {:var, "Lowest"}}
+
+  """
+  @spec min(Term.t(), Term.t()) :: t()
+  def min(input, result), do: aggregate(:min, input, result)
+
+  @doc """
+  Constructs a `max` aggregate: `result = maximum of input within each group`.
+
+  ## Examples
+
+      iex> ExDatalog.Constraint.max({:var, "Score"}, {:var, "Highest"})
+      %ExDatalog.Constraint{op: :max, left: {:var, "Score"}, right: nil, result: {:var, "Highest"}}
+
+  """
+  @spec max(Term.t(), Term.t()) :: t()
+  def max(input, result), do: aggregate(:max, input, result)
+
   # --- Introspection ---
 
   @doc """
@@ -480,6 +557,49 @@ defmodule ExDatalog.Constraint do
   def membership?(%__MODULE__{op: op}), do: op in @membership_ops
 
   @doc """
+  Returns `true` if the constraint is an aggregate (`count`, `sum`, `min`, `max`).
+
+  Aggregates bind a `result` variable by grouping and reducing, and are
+  evaluated by a dedicated engine path rather than the per-binding constraint
+  pipeline.
+
+  ## Examples
+
+      iex> ExDatalog.Constraint.aggregate?(ExDatalog.Constraint.count({:var, "X"}, {:var, "N"}))
+      true
+
+      iex> ExDatalog.Constraint.aggregate?(ExDatalog.Constraint.gt({:var, "X"}, {:const, 0}))
+      false
+
+  """
+  @spec aggregate?(t()) :: boolean()
+  def aggregate?(%__MODULE__{op: op}), do: op in @aggregate_ops
+
+  @doc false
+  @spec comparison_op?(atom()) :: boolean()
+  def comparison_op?(op), do: op in @comparison_ops
+
+  @doc false
+  @spec arithmetic_op?(atom()) :: boolean()
+  def arithmetic_op?(op), do: op in @arithmetic_ops
+
+  @doc false
+  @spec type_op?(atom()) :: boolean()
+  def type_op?(op), do: op in @type_ops
+
+  @doc false
+  @spec string_op?(atom()) :: boolean()
+  def string_op?(op), do: op in @string_ops
+
+  @doc false
+  @spec membership_op?(atom()) :: boolean()
+  def membership_op?(op), do: op in @membership_ops
+
+  @doc false
+  @spec aggregate_op?(atom()) :: boolean()
+  def aggregate_op?(op), do: op in @aggregate_ops
+
+  @doc """
   Returns `true` if the constraint is structurally valid.
 
   ## Examples
@@ -551,16 +671,20 @@ defmodule ExDatalog.Constraint do
     %__MODULE__{op: op, left: left, right: right, result: nil}
   end
 
+  defp aggregate(op, input, result) do
+    %__MODULE__{op: op, left: input, right: nil, result: result}
+  end
+
   defp valid_result?(op, nil)
        when op in @comparison_ops or op in @type_ops or op in @string_ops or op in @membership_ops,
        do: true
 
-  defp valid_result?(op, {:var, name}) when op in @arithmetic_ops,
+  defp valid_result?(op, {:var, name}) when op in @arithmetic_ops or op in @aggregate_ops,
     do: is_binary(name) and byte_size(name) > 0
 
   defp valid_result?(_, _), do: false
 
-  defp valid_right?(op, nil) when op in @type_ops, do: true
+  defp valid_right?(op, nil) when op in @type_ops or op in @aggregate_ops, do: true
 
   defp valid_right?(:member, {:const, value}) when is_list(value), do: true
 
@@ -644,6 +768,10 @@ defmodule ExDatalog.Constraint do
     filter(op, Term.from(left), Term.from(right))
   end
 
+  def from_tuple({op, input, result}) when op in @aggregate_ops do
+    aggregate(op, Term.from(input), Term.from(result))
+  end
+
   def from_tuple({:member, left, right}) do
     member(Term.from(left), Term.from(right))
   end
@@ -722,4 +850,5 @@ defmodule ExDatalog.Constraint do
   defp constraint_module(op) when op in @type_ops, do: ExDatalog.Constraints.Type
   defp constraint_module(op) when op in @string_ops, do: ExDatalog.Constraints.StringPredicate
   defp constraint_module(op) when op in @membership_ops, do: ExDatalog.Constraints.Membership
+  defp constraint_module(op) when op in @aggregate_ops, do: ExDatalog.Constraints.Aggregate
 end

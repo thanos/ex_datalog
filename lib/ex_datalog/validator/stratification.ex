@@ -101,7 +101,74 @@ defmodule ExDatalog.Validator.Stratification do
       |> MapSet.union(MapSet.new(all_vertices(graph)))
       |> MapSet.to_list()
 
-    assign_strata_greedy(graph, sccs, all_rels)
+    graph
+    |> assign_strata_greedy(sccs, all_rels)
+    |> force_aggregate_strata(program)
+  end
+
+  # Aggregates are non-monotone: a rule that aggregates over its positive body
+  # relations must evaluate in a stratum strictly above all of them. This runs a
+  # fixpoint that bumps each aggregate rule's head relation until the invariant
+  # holds, then re-propagates so dependents stay ordered.
+  defp force_aggregate_strata(strata, %ExDatalog.Program{rules: rules} = program) do
+    aggregate_rules = Enum.filter(rules, &ExDatalog.Rule.has_aggregates?/1)
+
+    if aggregate_rules == [] do
+      strata
+    else
+      graph = build_graph(program)
+      stabilize_aggregate_strata(strata, aggregate_rules, graph)
+    end
+  end
+
+  defp stabilize_aggregate_strata(strata, aggregate_rules, graph, fuel \\ 1000)
+
+  defp stabilize_aggregate_strata(strata, _aggregate_rules, _graph, 0), do: strata
+
+  defp stabilize_aggregate_strata(strata, aggregate_rules, graph, fuel) do
+    bumped =
+      Enum.reduce(aggregate_rules, strata, fn rule, acc ->
+        head_rel = rule.head.relation
+
+        body_rels =
+          for {:positive, %Atom{relation: rel}} <- rule.body, rel != head_rel, do: rel
+
+        required =
+          case body_rels do
+            [] -> Map.get(acc, head_rel, 0)
+            _ -> (body_rels |> Enum.map(&Map.get(acc, &1, 0)) |> Enum.max()) + 1
+          end
+
+        if Map.get(acc, head_rel, 0) < required do
+          Map.put(acc, head_rel, required)
+        else
+          acc
+        end
+      end)
+
+    bumped = propagate_strata(bumped, graph)
+
+    if bumped == strata do
+      strata
+    else
+      stabilize_aggregate_strata(bumped, aggregate_rules, graph, fuel - 1)
+    end
+  end
+
+  # After bumping an aggregate head, every relation that positively depends on it
+  # must be at least as high; negative/aggregate dependents must be strictly
+  # higher. One pass; the outer fixpoint repeats until stable.
+  defp propagate_strata(strata, graph) do
+    Enum.reduce(graph, strata, fn {head_rel, deps}, acc ->
+      required = Enum.reduce(deps, Map.get(acc, head_rel, 0), &required_stratum(&1, &2, acc))
+      Map.put(acc, head_rel, required)
+    end)
+  end
+
+  defp required_stratum({dep, polarity}, current, acc) do
+    dep_stratum = Map.get(acc, dep, 0)
+    needed = if polarity == :negative, do: dep_stratum + 1, else: dep_stratum
+    max(current, needed)
   end
 
   @doc false

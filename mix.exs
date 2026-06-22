@@ -1,7 +1,7 @@
 defmodule ExDatalog.MixProject do
   use Mix.Project
 
-  @version "0.4.1"
+  @version "0.5.0"
   @source_url "https://github.com/thanos/ex_datalog"
 
   def project do
@@ -63,6 +63,7 @@ defmodule ExDatalog.MixProject do
       {:excoveralls, "~> 0.18", only: :test},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
       {:stream_data, "~> 1.1", only: [:dev, :test]},
+      {:benchee, "~> 1.3", only: :dev, runtime: false},
       {:ex_slop, "~> 0.1", only: [:dev, :test], runtime: false},
       {:ex_dna, "~> 1.5", only: [:dev, :test], runtime: false}
     ]
@@ -128,7 +129,18 @@ defmodule ExDatalog.MixProject do
         {"docs/articles/04_querying_materialized_knowledge.md",
          filename: "querying-materialized-knowledge", title: "Querying Materialized Knowledge"},
         {"docs/articles/05_negation_constraints_and_safety.md",
-         filename: "negation-constraints-and-safety", title: "Negation, Constraints, and Safety"}
+         filename: "negation-constraints-and-safety", title: "Negation, Constraints, and Safety"},
+        {"docs/articles/06_query_planning_in_datalog.md",
+         filename: "query-planning-in-datalog", title: "Query Planning in Datalog"},
+        {"docs/articles/07_aggregates_in_datalog.md",
+         filename: "aggregates-in-datalog", title: "Aggregates in Datalog"},
+        {"docs/articles/08_extending_datalog_with_beam_callbacks.md",
+         filename: "extending-datalog-with-beam-callbacks",
+         title: "Extending Datalog with BEAM Callbacks"},
+        {"docs/articles/09_magic_sets_and_demand_driven_evaluation.md",
+         filename: "magic-sets-and-demand-driven-evaluation",
+         title: "Magic Sets and Demand-Driven Evaluation"},
+        {"docs/migration_v0.5.md", filename: "migration-v0-5", title: "Migration: v0.4 → v0.5"}
       ],
       groups_for_modules: [
         "Program Builder": [
@@ -145,7 +157,9 @@ defmodule ExDatalog.MixProject do
           ExDatalog.Validator.Stratification
         ],
         "Compiler & IR": ~r/ExDatalog\.(Compiler|IR).*/,
+        Planner: ~r/ExDatalog\.Planner.*/,
         Engine: ~r/ExDatalog\.Engine.*/,
+        "Magic Sets": [ExDatalog.MagicSets],
         Storage: ~r/ExDatalog\.Storage.*/,
         Knowledge: [
           ExDatalog.Knowledge,
@@ -154,6 +168,7 @@ defmodule ExDatalog.MixProject do
         ],
         DSL: [
           ExDatalog.Schema,
+          ExDatalog.Callback,
           ExDatalog.DSL.CompileError,
           ExDatalog.UnsupportedFeature
         ]

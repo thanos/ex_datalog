@@ -37,6 +37,7 @@ defmodule ExDatalog.Engine.Evaluator do
   ordering guarantee.
   """
 
+  alias ExDatalog.Constraints.{Aggregate, BeamCallback}
   alias ExDatalog.Engine.{Binding, ConstraintEval, Join}
   alias ExDatalog.IR
 
@@ -77,11 +78,23 @@ defmodule ExDatalog.Engine.Evaluator do
         ) ::
           [tuple()]
   def eval_rule_iteration(rule, full, delta, old, ctx \\ %ExDatalog.Constraint.Context{}) do
-    positive_body = positive_atoms(rule)
-    k = length(positive_body)
-
     head_relation = rule.head.relation
     existing = Map.get(full, head_relation, MapSet.new())
+
+    if aggregate_rule?(rule) do
+      rule
+      |> eval_aggregate_rule(full, ctx)
+      |> MapSet.new()
+      |> MapSet.difference(existing)
+      |> MapSet.to_list()
+    else
+      eval_normal_rule(rule, full, delta, old, ctx, existing)
+    end
+  end
+
+  defp eval_normal_rule(rule, full, delta, old, ctx, existing) do
+    positive_body = positive_atoms(rule)
+    k = length(positive_body)
 
     if k == 0 do
       derived =
@@ -97,6 +110,56 @@ defmodule ExDatalog.Engine.Evaluator do
       |> MapSet.difference(existing)
       |> MapSet.to_list()
     end
+  end
+
+  defp aggregate_rule?(%IR.Rule{body: body}) do
+    Enum.any?(body, fn
+      {:constraint, %ExDatalog.IR.Constraint{op: op}} -> op in [:count, :sum, :min, :max]
+      _ -> false
+    end)
+  end
+
+  # Aggregate rules are stratified above their source relations, so all source
+  # facts are final in `full`. We join the positive body against `full`, apply
+  # non-aggregate filters and negation, group by the head variables other than
+  # the aggregate result, reduce each group, then project.
+  defp eval_aggregate_rule(%IR.Rule{} = rule, full, ctx) do
+    agg_constraint = find_aggregate(rule.body)
+
+    joined = join_positive_body([%{}], rule.body, full)
+    filtered = apply_constraints(rule.body, joined, ctx)
+    with_callbacks = apply_callbacks(rule.body, filtered, ctx)
+    bindings = apply_negation(rule.body, with_callbacks, full)
+
+    %ExDatalog.IR.Constraint{op: op, left: {:var, input_var}, result: {:var, result_var}} =
+      agg_constraint
+
+    group_vars = aggregate_group_vars(rule.head, result_var)
+
+    bindings
+    |> Aggregate.group_and_reduce(group_vars, op, input_var, result_var)
+    |> Enum.map(&Join.project(rule.head, &1))
+  end
+
+  defp find_aggregate(body) do
+    Enum.find_value(body, fn
+      {:constraint, %ExDatalog.IR.Constraint{op: op} = c} when op in [:count, :sum, :min, :max] ->
+        c
+
+      _ ->
+        nil
+    end)
+  end
+
+  # Group by the head variables other than the aggregate result variable.
+  defp aggregate_group_vars(%IR.Atom{terms: terms}, result_var) do
+    terms
+    |> Enum.flat_map(fn
+      {:var, name} -> [name]
+      _ -> []
+    end)
+    |> Enum.reject(fn name -> name == result_var end)
+    |> Enum.uniq()
   end
 
   @doc """
@@ -137,6 +200,7 @@ defmodule ExDatalog.Engine.Evaluator do
 
   defp finish_bindings(bindings, rule, full, ctx) do
     bindings = apply_constraints(rule.body, bindings, ctx)
+    bindings = apply_callbacks(rule.body, bindings, ctx)
     bindings = apply_negation(rule.body, bindings, full)
 
     case bindings do
@@ -144,6 +208,34 @@ defmodule ExDatalog.Engine.Evaluator do
       _ -> Enum.map(bindings, &Join.project(rule.head, &1))
     end
   end
+
+  defp apply_callbacks(body, bindings, ctx) do
+    callbacks = for {:callback, cb} <- body, do: cb
+
+    case callbacks do
+      [] ->
+        bindings
+
+      _ ->
+        opts = callback_opts(ctx)
+
+        Enum.flat_map(bindings, fn binding ->
+          apply_callback_chain(callbacks, binding, opts)
+        end)
+    end
+  end
+
+  defp apply_callback_chain(callbacks, binding, opts) do
+    Enum.reduce_while(callbacks, [binding], fn cb, [b] ->
+      step_callback(BeamCallback.apply_callback(cb, b, opts))
+    end)
+  end
+
+  defp step_callback({:ok, new_b}), do: {:cont, [new_b]}
+  defp step_callback(:filter), do: {:halt, []}
+
+  defp callback_opts(%ExDatalog.Constraint.Context{opts: opts}) when is_list(opts), do: opts
+  defp callback_opts(_), do: []
 
   defp eval_variant(rule, positive_body, full, delta, old, delta_pos, ctx) do
     bindings =
@@ -181,7 +273,13 @@ defmodule ExDatalog.Engine.Evaluator do
   end
 
   defp apply_constraints(body, bindings, ctx) do
-    constraints = for {:constraint, c} <- body, do: c
+    # Aggregate constraints are NOT evaluated per binding; they are handled by
+    # the group-and-reduce aggregate path. Exclude them here so the normal
+    # per-binding pipeline never feeds them to ConstraintEval.
+    constraints =
+      for {:constraint, %ExDatalog.IR.Constraint{op: op} = c} <- body,
+          op not in [:count, :sum, :min, :max],
+          do: c
 
     Enum.flat_map(bindings, fn b ->
       case ConstraintEval.apply(constraints, b, ctx) do
